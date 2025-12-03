@@ -1,0 +1,13 @@
+Metadata-Version: 2.1
+Name: realsense-publisher
+Version: 0.0.0
+Summary: ROS package to publish on the topic point_cloud le nuage de points genere par la realsense D435i
+Home-page: UNKNOWN
+Maintainer: francois
+Maintainer-email: francois@todo.todo
+License: TODO: License declaration
+Platform: UNKNOWN
+Provides-Extra: test
+
+UNKNOWN
+

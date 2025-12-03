@@ -1,0 +1,3 @@
+[console_scripts]
+realsense_publisher = realsense_publisher.realsense_p:main
+
