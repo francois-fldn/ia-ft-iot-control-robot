@@ -1,0 +1,24 @@
+[0.408s] Invoking command in '/home/francois/00-projets/ia-ft-iot-control-robot/ros2_packages/src/realsense_publisher': PYTHONPATH=/home/francois/00-projets/ia-ft-iot-control-robot/ros2_packages/build/realsense_publisher/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/francois/00-projets/ia-ft-iot-control-robot/ros2_packages/install/realsense_publisher/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../build/realsense_publisher build --build-base /home/francois/00-projets/ia-ft-iot-control-robot/ros2_packages/build/realsense_publisher/build install --record /home/francois/00-projets/ia-ft-iot-control-robot/ros2_packages/build/realsense_publisher/install.log --single-version-externally-managed install_data
+[0.563s] running egg_info
+[0.563s] writing ../../build/realsense_publisher/realsense_publisher.egg-info/PKG-INFO
+[0.564s] writing dependency_links to ../../build/realsense_publisher/realsense_publisher.egg-info/dependency_links.txt
+[0.564s] writing entry points to ../../build/realsense_publisher/realsense_publisher.egg-info/entry_points.txt
+[0.564s] writing requirements to ../../build/realsense_publisher/realsense_publisher.egg-info/requires.txt
+[0.564s] writing top-level names to ../../build/realsense_publisher/realsense_publisher.egg-info/top_level.txt
+[0.565s] reading manifest file '../../build/realsense_publisher/realsense_publisher.egg-info/SOURCES.txt'
+[0.566s] writing manifest file '../../build/realsense_publisher/realsense_publisher.egg-info/SOURCES.txt'
+[0.566s] running build
+[0.566s] running build_py
+[0.566s] copying realsense_publisher/realsense_p.py -> /home/francois/00-projets/ia-ft-iot-control-robot/ros2_packages/build/realsense_publisher/build/lib/realsense_publisher
+[0.566s] running install
+[0.566s] running install_lib
+[0.567s] copying /home/francois/00-projets/ia-ft-iot-control-robot/ros2_packages/build/realsense_publisher/build/lib/realsense_publisher/realsense_p.py -> /home/francois/00-projets/ia-ft-iot-control-robot/ros2_packages/install/realsense_publisher/lib/python3.10/site-packages/realsense_publisher
+[0.567s] byte-compiling /home/francois/00-projets/ia-ft-iot-control-robot/ros2_packages/install/realsense_publisher/lib/python3.10/site-packages/realsense_publisher/realsense_p.py to realsense_p.cpython-310.pyc
+[0.568s] running install_data
+[0.568s] running install_egg_info
+[0.569s] removing '/home/francois/00-projets/ia-ft-iot-control-robot/ros2_packages/install/realsense_publisher/lib/python3.10/site-packages/realsense_publisher-0.0.0-py3.10.egg-info' (and everything under it)
+[0.569s] Copying ../../build/realsense_publisher/realsense_publisher.egg-info to /home/francois/00-projets/ia-ft-iot-control-robot/ros2_packages/install/realsense_publisher/lib/python3.10/site-packages/realsense_publisher-0.0.0-py3.10.egg-info
+[0.570s] running install_scripts
+[0.585s] Installing realsense_publisher script to /home/francois/00-projets/ia-ft-iot-control-robot/ros2_packages/install/realsense_publisher/lib/realsense_publisher
+[0.585s] writing list of installed files to '/home/francois/00-projets/ia-ft-iot-control-robot/ros2_packages/build/realsense_publisher/install.log'
+[0.603s] Invoked command in '/home/francois/00-projets/ia-ft-iot-control-robot/ros2_packages/src/realsense_publisher' returned '0': PYTHONPATH=/home/francois/00-projets/ia-ft-iot-control-robot/ros2_packages/build/realsense_publisher/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/francois/00-projets/ia-ft-iot-control-robot/ros2_packages/install/realsense_publisher/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../build/realsense_publisher build --build-base /home/francois/00-projets/ia-ft-iot-control-robot/ros2_packages/build/realsense_publisher/build install --record /home/francois/00-projets/ia-ft-iot-control-robot/ros2_packages/build/realsense_publisher/install.log --single-version-externally-managed install_data
