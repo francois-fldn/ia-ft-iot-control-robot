@@ -20,21 +20,20 @@ class BallTrackerNode(Node):
             'yolov5', 
             'best320.tflite'  # version EdgeTPU 
         )
-        self.conf_threshold = 0.25    # Seuil de confiance
+        self.conf_threshold = 0.25    # seuil de confiance
 
         # Dimensions
-        self.cam_w = 640  # Résolution Caméra
+        self.cam_w = 640  # resolution camera
         self.cam_h = 480
-        self.model_w = 320 # Résolution Modèle
+        self.model_w = 320 # resolution model
         self.model_h = 320
         
-        # Facteurs d'échelle (Pré-calculés pour économiser le CPU)
         # Scale X = 640 / 320 = 2.0
         # Scale Y = 480 / 320 = 1.5
         self.scale_x = self.cam_w / self.model_w
         self.scale_y = self.cam_h / self.model_h
 
-        # --- 1. INITIALISATION EDGE TPU ---
+        # INITIALISATION EDGE TPU 
         self.get_logger().info("Chargement du TPU...")
         try:
             self.interpreter = tflite.Interpreter(
@@ -48,16 +47,16 @@ class BallTrackerNode(Node):
             self.get_logger().error(f"Erreur TPU: {e}. Vérifiez libedgetpu.")
             return
 
-        # --- 2. INITIALISATION ROS ---
+        # INITIALISATION ROS
         self.bridge = CvBridge()
         self.pub_ball = self.create_publisher(PointStamped, '/ball_3d', 10)
         self.pub_marker = self.create_publisher(Marker, '/ball_marker', 10)
 
-        # Subscribers synchronisés
+        # Subscribers
         # On utilise ApproximateTimeSynchronizer car les timestamps USB varient légèrement
-        self.sub_rgb = message_filters.Subscriber(self, Image, '/camera/color/image_raw')
-        self.sub_depth = message_filters.Subscriber(self, Image, '/camera/aligned_depth_to_color/image_raw')
-        self.sub_info = message_filters.Subscriber(self, CameraInfo, '/camera/color/camera_info')
+        self.sub_rgb = message_filters.Subscriber(self, Image, '/Realsense/Image/Color')
+        self.sub_depth = message_filters.Subscriber(self, Image, '/Realsense/Image/Depth')
+        self.sub_info = message_filters.Subscriber(self, CameraInfo, '/Realsense/Image/CameraInfo')
 
         self.ts = message_filters.ApproximateTimeSynchronizer(
             [self.sub_rgb, self.sub_depth, self.sub_info], 
@@ -69,7 +68,7 @@ class BallTrackerNode(Node):
         self.get_logger().info("Node prêt. En attente d'images...")
 
     def listener_callback(self, rgb_msg, depth_msg, info_msg):
-        # --- A. PRÉPARATION DES DONNÉES ---
+        # PRÉPARATION DES DONNÉES 
         try:
             # Conversion ROS -> OpenCV
             # Depth en 'passthrough' garde le format uint16 (mm) d'origine
@@ -112,8 +111,8 @@ class BallTrackerNode(Node):
             model_x, model_y = box[0], box[1]
 
             # Si le modèle sort des valeurs normalisées (0-1), décommentez :
-            # model_x *= self.model_w
-            # model_y *= self.model_h
+            model_x *= self.model_w
+            model_y *= self.model_h
 
             # Transformation vers l'image Caméra (640x480)
             # C'est ici qu'on gère la distorsion
@@ -133,11 +132,12 @@ class BallTrackerNode(Node):
             
             # Filtrer les zéros (bruit)
             valid_depths = d_region[d_region > 0]
+            depth_scale = 0.001 
 
             if len(valid_depths) > 0:
                 # Médiane pour robustesse
                 z_mm = np.median(valid_depths)
-                z_m = z_mm / 1000.0 # Conversion mm -> mètres
+                z_m = z_mm * depth_scale # Conversion mm -> mètres, depth_scale hardcodée ici
 
                 # Formule Pinhole Inverse
                 x_m = (cam_x - cx) * z_m / fx
