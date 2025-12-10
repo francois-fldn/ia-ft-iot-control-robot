@@ -1,0 +1,17 @@
+package.xml
+setup.cfg
+setup.py
+../../build/realsense_publisher/realsense_publisher.egg-info/PKG-INFO
+../../build/realsense_publisher/realsense_publisher.egg-info/SOURCES.txt
+../../build/realsense_publisher/realsense_publisher.egg-info/dependency_links.txt
+../../build/realsense_publisher/realsense_publisher.egg-info/entry_points.txt
+../../build/realsense_publisher/realsense_publisher.egg-info/requires.txt
+../../build/realsense_publisher/realsense_publisher.egg-info/top_level.txt
+../../build/realsense_publisher/realsense_publisher.egg-info/zip-safe
+launch/realsense_publisher_with_foxglove_launch.py
+realsense_publisher/__init__.py
+realsense_publisher/realsense_p.py
+resource/realsense_publisher
+test/test_copyright.py
+test/test_flake8.py
+test/test_pep257.py

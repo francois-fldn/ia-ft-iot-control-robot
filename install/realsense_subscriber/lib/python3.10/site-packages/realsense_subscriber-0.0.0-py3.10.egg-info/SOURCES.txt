@@ -1,0 +1,16 @@
+package.xml
+setup.cfg
+setup.py
+../../build/realsense_subscriber/realsense_subscriber.egg-info/PKG-INFO
+../../build/realsense_subscriber/realsense_subscriber.egg-info/SOURCES.txt
+../../build/realsense_subscriber/realsense_subscriber.egg-info/dependency_links.txt
+../../build/realsense_subscriber/realsense_subscriber.egg-info/entry_points.txt
+../../build/realsense_subscriber/realsense_subscriber.egg-info/requires.txt
+../../build/realsense_subscriber/realsense_subscriber.egg-info/top_level.txt
+../../build/realsense_subscriber/realsense_subscriber.egg-info/zip-safe
+realsense_subscriber/__init__.py
+realsense_subscriber/realsense_s.py
+resource/realsense_subscriber
+test/test_copyright.py
+test/test_flake8.py
+test/test_pep257.py
