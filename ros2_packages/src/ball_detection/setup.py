@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
 
-package_name = 'realsense_subscriber'
+package_name = 'ball_detection'
 
 setup(
     name=package_name,
@@ -24,7 +24,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'realsense_subscriber = realsense_subscriber.realsense_s:main',
+            'ball_detector = ball_detection.b_d:main',
         ],
     },
 )

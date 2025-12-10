@@ -1,6 +1,6 @@
 import rclpy # the ros2 python client library
 from rclpy.node import Node # A base class from rclpy that represents a ROS2 node
-from sensor_msgs.msg import PointCloud2, PointField
+# from sensor_msgs.msg import PointCloud2, PointField
 # from std_msgs.msg import PointCloud2
 import pyrealsense2 as rs
 import numpy as np
@@ -8,13 +8,16 @@ import sensor_msgs_py.point_cloud2 as pc2
 from std_msgs.msg import Header
 from cv_bridge import CvBridge
 from sensor_msgs.msg import Image
+from sensor_msgs.msg import CameraInfo
+
 
 class PointCloudPublisher(Node):
 	def __init__(self):
 		# publisher config
 		super().__init__('pointcloudpublisher')
-		self.point_cloud_publisher_ = self.create_publisher(PointCloud2, 'RealsensePointCloud', 10)
-		self.color_publisher_ = self.create_publisher(Image, 'RealsenseColor', 10)
+		self.depth_image_publisher_ = self.create_publisher(Image, 'Realsense/Image/Depth', 10)
+		self.color_image_publisher_ = self.create_publisher(Image, 'Realsense/Image/Color', 10)
+		self.camera_info_publisher_ = self.create_publisher(CameraInfo, 'Realsense/CameraInfo', 10)
 		self.timer = self.create_timer(1/10, self.timer_callback)
 		
 		# realsense pipeline config
@@ -25,10 +28,17 @@ class PointCloudPublisher(Node):
 		self.config.enable_stream(rs.stream.depth, 424, 240, rs.format.z16, 6)
 		self.config.enable_stream(rs.stream.color, 424, 240, rs.format.bgr8, 6)
 
-		self.pipe.start(self.config)
+		profile = self.pipe.start(self.config)
+		
+		stream_profile = profile.get_stream(rs.stream.depth)
+		self.intrinsics = stream_profile.as_video_stream_profile().get_intrinsics()
 
 		self.decimate = rs.decimation_filter(8)
 		self.align = rs.align(rs.stream.color)
+
+		depth_sensor = profile.get_device().first_depth_sensor()
+		depth_scale = depth_sensor.get_depth_scale()
+		# print("Depth Scale is: " , depth_scale)
 		
 		self.i = 0
 
@@ -42,22 +52,55 @@ class PointCloudPublisher(Node):
 		
 		if (not depth_frame) or (not color_frame): return
 		
-		points = self.pc.calculate(depth_frame)
-		# decimated = decimate.process(aligned_frames).as_frameset()
+		now = self.get_clock().now().to_msg()
+
+		depth_image = np.asanyarray(depth_frame.get_data())
+		color_image = np.asanyarray(color_frame.get_data())
+
+		# Convertir les array numpy en image
+		bridge = CvBridge()
+		ros_depth_image_msg = bridge.cv2_to_imgmsg(depth_image, encoding="passthrough")
+		ros_color_image_msg = bridge.cv2_to_imgmsg(color_image, encoding="rgb8")
 		
-		verts = np.asanyarray(points.get_vertices()).view(np.float32).reshape(-1, 3)
-		
+		# On recup le message Camera Info
+		camera_info_msg = get_camera_info_msg(self.intrinsics)
+
+		# Création du header du message
 		header = Header()
 		header.frame_id = "camera_depth_optical_frame"
-		pc_msg = pc2.create_cloud_xyz32(header, verts)
+		header.stamp = self.get_clock().now().to_msg()
+
+		# Ajout du header aux messages
+		camera_info_msg.header = header
+		ros_color_image_msg.header = header
+		ros_depth_image_msg.header = header
+
+		# Publier les messages
+		self.depth_image_publisher_.publish(ros_depth_image_msg)
+		self.color_image_publisher_.publish(ros_color_image_msg)
+		self.camera_info_publisher_.publish(camera_info_msg)
+
+
+
+
+
+
+		# points = self.pc.calculate(depth_frame)
+		# decimated = decimate.process(aligned_frames).as_frameset()
 		
-		color_image = np.asanyarray(color_frame.get_data())
+		# verts = np.asanyarray(points.get_vertices()).view(np.float32).reshape(-1, 3)
 		
-		bridge = CvBridge()
-		ros_image_msg = bridge.cv2_to_imgmsg(color_image, encoding="rgb8")
+		# header = Header()
+		# header.frame_id = "camera_depth_optical_frame"
+		# pc_msg = pc2.create_cloud_xyz32(header, verts)
+		
+		# color_image = np.asanyarray(color_frame.get_data())
+		
+		# bridge = CvBridge()
+		# ros_image_msg = bridge.cv2_to_imgmsg(color_image, encoding="rgb8")
 	
-		self.point_cloud_publisher_.publish(pc_msg)	
-		self.color_publisher_.publish(ros_image_msg)
+		# self.point_cloud_publisher_.publish(pc_msg)	
+		# self.color_publisher_.publish(ros_image_msg)
 		
 		
 		
@@ -96,6 +139,22 @@ class PointCloudPublisher(Node):
 		'''
 
 		self.i+=1
+
+	def get_camera_info_msg(intrinsics):
+		camera_info_msg = CameraInfo()
+		camera_info_msg.width = intrinsics.width
+		camera_info_msg.height = intrinsics.height
+
+		camera_info_msg.k = [
+			intrinsics.fx, 0.0, intrinsics.ppx,
+			0.0, intrinsics.fy, intrinsics.ppy,
+			0.0, 0.0, 1.0
+		]
+
+		camera_info_msg.distortion_model = intrinsics.model
+		camera_info_msg.d = intrinsics.coeffs
+		return camera_info_msg
+
 
 def main(args=None):
 	rclpy.init(args=args) # Initialize the ROS2 Python system
