@@ -1,3 +1,0 @@
-[console_scripts]
-ball_detector = ball_detection.b_d:main
-

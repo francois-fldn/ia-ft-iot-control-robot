@@ -1,3 +1,0 @@
-[console_scripts]
-realsense_subscriber = realsense_subscriber.realsense_s:main
-
