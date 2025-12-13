@@ -64,7 +64,7 @@ class PointCloudPublisher(Node):
 		ros_color_image_msg = bridge.cv2_to_imgmsg(color_image, encoding="rgb8")
 		
 		# On recup le message Camera Info
-		camera_info_msg = get_camera_info_msg(self.intrinsics)
+		camera_info_msg = self.get_camera_info_msg(self.intrinsics)
 
 		# Création du header du message
 		header = Header()

@@ -8,17 +8,19 @@ import cv2
 import numpy as np
 import tflite_runtime.interpreter as tflite
 from visualization_msgs.msg import Marker
+from ament_index_python.packages import get_package_share_directory
 import os
 
 class BallTrackerNode(Node):
     def __init__(self):
         super().__init__('ball_tracker_node')
+        package_share_directory = get_package_share_directory('ball_detection')
 
         # --- CONFIGURATION UTILISATEUR ---
         self.model_path = os.path.join(
-            os.path.dirname(__file__), 
-            'yolov5', 
-            'best320.tflite'  # version EdgeTPU 
+            package_share_directory,
+            'models', 
+            'yolov5n-int8_edgetpu320.tflite'  # version EdgeTPU 
         )
         self.conf_threshold = 0.25    # seuil de confiance
 
@@ -56,7 +58,7 @@ class BallTrackerNode(Node):
         # On utilise ApproximateTimeSynchronizer car les timestamps USB varient légèrement
         self.sub_rgb = message_filters.Subscriber(self, Image, '/Realsense/Image/Color')
         self.sub_depth = message_filters.Subscriber(self, Image, '/Realsense/Image/Depth')
-        self.sub_info = message_filters.Subscriber(self, CameraInfo, '/Realsense/Image/CameraInfo')
+        self.sub_info = message_filters.Subscriber(self, CameraInfo, '/Realsense/CameraInfo')
 
         self.ts = message_filters.ApproximateTimeSynchronizer(
             [self.sub_rgb, self.sub_depth, self.sub_info], 
