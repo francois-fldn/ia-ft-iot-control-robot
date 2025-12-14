@@ -141,9 +141,19 @@ class PointCloudPublisher(Node):
 			0.0, intrinsics.fy, intrinsics.ppy,
 			0.0, 0.0, 1.0
 		]
+		distortion_model_map = {
+			rs.distortion.none: 'none',
+			rs.distortion.brown_conrady: 'plumb_bob',
+			rs.distortion.ftheta: 'fisheye',
+			# Ajoutez d'autres modèles si vous changez de type de caméra
+		}
 
-		camera_info_msg.distortion_model = intrinsics.model
-		camera_info_msg.d = intrinsics.coeffs
+		camera_info_msg.distortion_model = distortion_model_map.get(
+			intrinsics.model, 
+			'unknown',
+		)
+		camera_info_msg.d = list(intrinsics.coeffs) 
+		
 		return camera_info_msg
 
 
