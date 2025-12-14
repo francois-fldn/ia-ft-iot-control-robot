@@ -1,7 +1,7 @@
 import rclpy # the ros2 python client library
 from rclpy.node import Node # A base class from rclpy that represents a ROS2 node
 from sensor_msgs.msg import PointCloud2, PointField
-from std_msgs.msg import PointCloud2
+#from std_msgs.msg import PointCloud2
 import pyrealsense2 as rs
 import numpy as np
 import sensor_msgs_py.point_cloud2 as pc2
