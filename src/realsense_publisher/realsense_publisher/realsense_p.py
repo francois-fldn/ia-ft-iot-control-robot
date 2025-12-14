@@ -131,7 +131,7 @@ class PointCloudPublisher(Node):
 
 		self.i+=1
 
-	def get_camera_info_msg(intrinsics):
+	def get_camera_info_msg(self, intrinsics):
 		camera_info_msg = CameraInfo()
 		camera_info_msg.width = intrinsics.width
 		camera_info_msg.height = intrinsics.height
