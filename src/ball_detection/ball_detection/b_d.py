@@ -23,7 +23,7 @@ class BallDetectorDebug(Node):
         self.model_path = os.path.join(package_share_directory, 'models', model_filename)
 
         # SEUIL CRITIQUE : Si vous avez trop de faux positifs, AUGMENTEZ ceci (0.40 -> 0.60)
-        self.conf_threshold = 0.40 
+        self.conf_threshold = 0.25
         
         self.model_w = 320 
         self.model_h = 320
