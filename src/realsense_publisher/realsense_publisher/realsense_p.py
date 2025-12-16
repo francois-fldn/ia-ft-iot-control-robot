@@ -16,15 +16,15 @@ class PointCloudPublisher(Node):
         self.camera_info_publisher_ = self.create_publisher(CameraInfo, 'Realsense/CameraInfo', 10)
         
         # Timer : 30 FPS (0.033s). Si le Pi rame trop, passez à 0.066 (15 FPS).
-        self.timer = self.create_timer(0.033, self.timer_callback)
+        self.timer = self.create_timer(0.132, self.timer_callback)
         
         # --- 2. CONFIGURATION REALSENSE PIPELINE ---
         self.pipe = rs.pipeline()
         self.config = rs.config()
         
         # Résolution 424x240 (Optimisé pour Raspberry Pi et YOLO)
-        self.config.enable_stream(rs.stream.depth, 424, 240, rs.format.z16, 30)
-        self.config.enable_stream(rs.stream.color, 424, 240, rs.format.bgr8, 30)
+        self.config.enable_stream(rs.stream.depth, 424, 240, rs.format.z16, 6)
+        self.config.enable_stream(rs.stream.color, 424, 240, rs.format.bgr8, 6)
 
         # Objet d'alignement : Indispensable pour que le pixel (x,y) couleur corresponde au pixel (x,y) profondeur
         self.align = rs.align(rs.stream.color)
