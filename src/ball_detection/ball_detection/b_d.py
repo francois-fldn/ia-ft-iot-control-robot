@@ -2,178 +2,178 @@ import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image, CameraInfo
 from geometry_msgs.msg import PointStamped
+from visualization_msgs.msg import Marker
 from cv_bridge import CvBridge
-import message_filters # Pour la synchro RGB/Depth
+import message_filters
 import cv2
 import numpy as np
 import tflite_runtime.interpreter as tflite
-from visualization_msgs.msg import Marker
 from ament_index_python.packages import get_package_share_directory
 import os
 
-class BallTrackerNode(Node):
+class BallDetectorEdgeTPU(Node):
     def __init__(self):
-        super().__init__('ball_tracker_node')
+        super().__init__('ball_detector_edgetpu')
+
+        # --- 1. CONFIGURATION DU MODÈLE ---
         package_share_directory = get_package_share_directory('ball_detection')
-
-        # --- CONFIGURATION UTILISATEUR ---
-        # Note: Garder le modèle INT8 est bien, il est compatible CPU.
-        self.model_path = os.path.join(
-            package_share_directory,
-            'models', 
-            'yolov5n-int8_320.tflite'
-        )
-        self.conf_threshold = 0.25    # seuil de confiance
-
-        # Dimensions
-        self.cam_w = 424  # resolution camera
-        self.cam_h = 240
-        self.model_w = 320 # resolution model
-        self.model_h = 320
         
-        # Calcul des facteurs d'échelle
-        self.scale_x = self.cam_w / self.model_w
-        self.scale_y = self.cam_h / self.model_h
+        # IMPORTANT : Mettez ici le nom EXACT de votre modèle compilé pour le TPU
+        # Il contient souvent "_edgetpu" dans le nom.
+        model_filename = 'yolov5n-int8_edgetpu320.tflite' 
+        self.model_path = os.path.join(package_share_directory, 'models', model_filename)
 
-        # --- INITIALISATION CPU TFLITE ---
-        self.get_logger().info("Chargement du modèle TFLite (Mode CPU)...")
+        self.conf_threshold = 0.40 # Seuil de confiance
+        self.model_w = 320 
+        self.model_h = 320
+
+        # --- 2. INITIALISATION EDGE TPU ---
+        self.get_logger().info(f"Chargement du modèle EdgeTPU : {model_filename}")
         try:
-            # Initialisation SANS le délégué EdgeTPU
+            # Chargement de la librairie partagée du Coral
+            # Si vous êtes sur PC et que cela échoue, vérifiez LD_LIBRARY_PATH
+            delegate = tflite.load_delegate('libedgetpu.so.1')
+            
             self.interpreter = tflite.Interpreter(
-                model_path=self.model_path
+                model_path=self.model_path,
+                experimental_delegates=[delegate]
             )
             self.interpreter.allocate_tensors()
+            
             self.input_details = self.interpreter.get_input_details()
             self.output_details = self.interpreter.get_output_details()
-            self.get_logger().info("SUCCÈS : Interpréteur TFLite alloué. Exécution sur CPU.")
+            self.get_logger().info("🚀 SUCCÈS : Accélérateur Coral EdgeTPU actif !")
+            
         except Exception as e:
-            self.get_logger().error(f"ÉCHEC CRITIQUE: Impossible d'initialiser l'interpréteur TFLite. Erreur: {e}")
-            # Ne pas continuer si l'interpréteur ne peut pas démarrer
-            return
+            self.get_logger().error(f"❌ ÉCHEC CRITIQUE TPU : {e}")
+            self.get_logger().error("Vérifiez que la Coral est branchée et que libedgetpu1-std est installé.")
+            return # On arrête le nœud si le TPU ne marche pas
 
-        # --- INITIALISATION ROS ---
+        # --- 3. INITIALISATION ROS ---
         self.bridge = CvBridge()
+        
         self.pub_ball = self.create_publisher(PointStamped, '/ball_3d', 10)
         self.pub_marker = self.create_publisher(Marker, '/ball_marker', 10)
 
-        # Subscribers (inchangés)
+        # Subscribers Synchronisés (RGB + Depth + Info)
         self.sub_rgb = message_filters.Subscriber(self, Image, '/Realsense/Image/Color')
         self.sub_depth = message_filters.Subscriber(self, Image, '/Realsense/Image/Depth')
         self.sub_info = message_filters.Subscriber(self, CameraInfo, '/Realsense/CameraInfo')
 
+        # Synchronisation
         self.ts = message_filters.ApproximateTimeSynchronizer(
             [self.sub_rgb, self.sub_depth, self.sub_info], 
             queue_size=10, 
-            slop=0.1 # Tolérance de 100ms
+            slop=0.1
         )
-        self.ts.registerCallback(self.listener_callback)
+        self.ts.registerCallback(self.callback)
         
-        self.get_logger().info("Node prêt. En attente d'images...")
+        self.get_logger().info("Node prêt. En attente de flux...")
 
-    def listener_callback(self, rgb_msg, depth_msg, info_msg):
-        # PRÉPARATION DES DONNÉES 
+    def callback(self, rgb_msg, depth_msg, info_msg):
+        # A. Conversion Images
         try:
-            # Conversion ROS -> OpenCV
             cv_rgb = self.bridge.imgmsg_to_cv2(rgb_msg, "bgr8")
             cv_depth = self.bridge.imgmsg_to_cv2(depth_msg, "passthrough")
         except Exception as e:
-            self.get_logger().warn(f"Erreur conversion image: {e}")
+            self.get_logger().warn(f"Erreur cv_bridge: {e}")
             return
 
-        # Récupération des intrinsèques (Camera Info)
-        fx = info_msg.k[0] # Focale X
-        fy = info_msg.k[4] # Focale Y
-        cx = info_msg.k[2] # Centre optique X
-        cy = info_msg.k[5] # Centre optique Y
+        cam_h, cam_w = cv_rgb.shape[:2]
 
-        # --- B. PRÉ-TRAITEMENT (Resize) ---
-        img_resized = cv2.resize(cv_rgb, (self.model_w, self.model_h), interpolation=cv2.INTER_LINEAR)
-        img_rgb_input = cv2.cvtColor(img_resized, cv2.COLOR_BGR2RGB)
-        input_data = np.expand_dims(img_rgb_input, axis=0) # Ajout batch dimension
+        # B. Préparation Inférence
+        img_resized = cv2.resize(cv_rgb, (self.model_w, self.model_h))
+        input_data = cv2.cvtColor(img_resized, cv2.COLOR_BGR2RGB)
+        input_data = np.expand_dims(input_data, axis=0)
 
-        # --- C. INFÉRENCE CPU ---
-        # L'appel à invoke() est le même, mais il utilise le CPU
+        # C. Inférence RAPIDE (TPU)
         self.interpreter.set_tensor(self.input_details[0]['index'], input_data)
-        self.interpreter.invoke()
+        self.interpreter.invoke() # C'est ici que le Coral travaille
         output_data = self.interpreter.get_tensor(self.output_details[0]['index'])
+
+        # D. Traitement des résultats
+        # YOLOv5 sort [1, N, 85] (xywh + conf + classes)
+        detections = output_data[0]
         
-        # --- D. PARSING & REMAPPING ---
-        
-        # Calcul du score : Confiance Objet * Probabilité Classe
-        scores = output_data[0, :, 4] 
-        best_idx = np.argmax(scores)
-        confidence = scores[best_idx]
+        # Filtre de confiance
+        strong_detections = detections[detections[:, 4] > self.conf_threshold]
 
-        if confidence > self.conf_threshold:
-            # Récupération box (Format Modèle 320x320)
-            box = output_data[0, best_idx, :4] # x, y, w, h
-            model_x, model_y = box[0], box[1]
-
-            # Si le modèle sort des valeurs normalisées (0-1), décommentez :
-            # model_x *= self.model_w
-            # model_y *= self.model_h
-
-            # Transformation vers l'image Caméra (424x240)
-            cam_x = int(model_x * self.scale_x)
-            cam_y = int(model_y * self.scale_y)
-
-            # Vérification limites image
-            cam_x = np.clip(cam_x, 0, self.cam_w - 1)
-            cam_y = np.clip(cam_y, 0, self.cam_h - 1)
-
-            # --- E. LECTURE PROFONDEUR & CALCUL 3D ---
-            # On prend une petite fenêtre 3x3 autour du centre 
-            d_region = cv_depth[
-                max(0, cam_y-1):min(self.cam_h, cam_y+2),
-                max(0, cam_x-1):min(self.cam_w, cam_x+2)
-            ]
+        if len(strong_detections) > 0:
+            best_idx = np.argmax(strong_detections[:, 4])
+            detection = strong_detections[best_idx]
             
-            # Filtrer les zéros (bruit)
-            valid_depths = d_region[d_region > 0]
-            depth_scale = 0.001 
+            # Coordonnées Modèle (0-320)
+            mx, my, mw, mh = detection[0:4]
+            
+            # Mise à l'échelle vers Caméra
+            scale_x = cam_w / self.model_w
+            scale_y = cam_h / self.model_h
+            
+            cx_img = int(mx * scale_x)
+            cy_img = int(my * scale_y)
+            
+            cx_img = np.clip(cx_img, 0, cam_w - 1)
+            cy_img = np.clip(cy_img, 0, cam_h - 1)
+
+            # E. Calcul 3D (Median Filter)
+            # Fenêtre de 10x10 pixels
+            window = 5
+            x_min = max(0, cx_img - window)
+            x_max = min(cam_w, cx_img + window)
+            y_min = max(0, cy_img - window)
+            y_max = min(cam_h, cy_img + window)
+
+            depth_crop = cv_depth[y_min:y_max, x_min:x_max]
+            valid_depths = depth_crop[depth_crop > 0]
 
             if len(valid_depths) > 0:
-                # Médiane pour robustesse
                 z_mm = np.median(valid_depths)
-                z_m = z_mm * depth_scale # Conversion mm -> mètres
+                z_m = z_mm * 0.001 
 
-                # Formule Pinhole Inverse
-                x_m = (cam_x - cx) * z_m / fx
-                y_m = (cam_y - cy) * z_m / fy
+                # Projection 3D
+                fx = info_msg.k[0]
+                fy = info_msg.k[4]
+                ppx = info_msg.k[2]
+                ppy = info_msg.k[5]
 
-                # --- F. PUBLICATION ROS ---
-                # 1. Point 3D
-                msg = PointStamped()
-                msg.header = rgb_msg.header 
-                msg.point.x = x_m
-                msg.point.y = y_m
-                msg.point.z = z_m
-                self.pub_ball.publish(msg)
+                x_m = (cx_img - ppx) * z_m / fx
+                y_m = (cy_img - ppy) * z_m / fy
 
-                # 2. Marker pour RViz2
-                marker = Marker()
-                marker.header = rgb_msg.header 
-                marker.ns = "ball_detection"
-                marker.id = 0
-                marker.type = Marker.SPHERE
-                marker.action = Marker.ADD
-                marker.pose.position.x = x_m
-                marker.pose.position.y = y_m
-                marker.pose.position.z = z_m
-                marker.pose.orientation.w = 1.0
-                marker.scale.x = 0.2
-                marker.scale.y = 0.2
-                marker.scale.z = 0.2
-                marker.color.a = 1.0
-                marker.color.r = 1.0
-                marker.color.g = 0.5
-                marker.color.b = 0.0
-                self.pub_marker.publish(marker)
+                # F. Publication
+                self.publish_result(rgb_msg.header, x_m, y_m, z_m)
 
+    def publish_result(self, header, x, y, z):
+        # Topic de coordonnées
+        pt = PointStamped()
+        pt.header = header
+        pt.point.x = float(x)
+        pt.point.y = float(y)
+        pt.point.z = float(z)
+        self.pub_ball.publish(pt)
+
+        # Marker Rviz
+        marker = Marker()
+        marker.header = header
+        marker.ns = "yolo_ball"
+        marker.id = 0
+        marker.type = Marker.SPHERE
+        marker.action = Marker.ADD
+        marker.pose.position.x = float(x)
+        marker.pose.position.y = float(y)
+        marker.pose.position.z = float(z)
+        marker.pose.orientation.w = 1.0
+        marker.scale.x = 0.2
+        marker.scale.y = 0.2
+        marker.scale.z = 0.2
+        marker.color.a = 1.0
+        marker.color.r = 0.0
+        marker.color.g = 1.0 # Vert pour dire "TPU OK"
+        marker.color.b = 0.0
+        self.pub_marker.publish(marker)
 
 def main(args=None):
     rclpy.init(args=args)
-    node = BallTrackerNode()
+    node = BallDetectorEdgeTPU()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
