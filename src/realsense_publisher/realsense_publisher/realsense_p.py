@@ -1,168 +1,150 @@
-import rclpy # the ros2 python client library
-from rclpy.node import Node # A base class from rclpy that represents a ROS2 node
-from sensor_msgs.msg import PointCloud2, PointField
-#from std_msgs.msg import PointCloud2
-import pyrealsense2 as rs
-import numpy as np
-import sensor_msgs_py.point_cloud2 as pc2
+import rclpy
+from rclpy.node import Node
+from sensor_msgs.msg import Image, CameraInfo
 from std_msgs.msg import Header
 from cv_bridge import CvBridge
-from sensor_msgs.msg import Image
-from sensor_msgs.msg import CameraInfo
-
+import pyrealsense2 as rs
+import numpy as np
 
 class PointCloudPublisher(Node):
-	def __init__(self):
-		# publisher config
-		super().__init__('pointcloudpublisher')
-		self.depth_image_publisher_ = self.create_publisher(Image, 'Realsense/Image/Depth', 10)
-		self.color_image_publisher_ = self.create_publisher(Image, 'Realsense/Image/Color', 10)
-		# self.point_cloud_publisher_ = self.create_publisher(PointCloud2, 'Realsense/PointCloud', 10)
-		self.camera_info_publisher_ = self.create_publisher(CameraInfo, 'Realsense/CameraInfo', 10)
-		self.timer = self.create_timer(1/10, self.timer_callback)
-		
-		# realsense pipeline config
-		self.pc = rs.pointcloud()
-		self.points = rs.points()
-		self.pipe = rs.pipeline()
-		self.config = rs.config()
-		self.config.enable_stream(rs.stream.depth, 424, 240, rs.format.z16, 6)
-		self.config.enable_stream(rs.stream.color, 424, 240, rs.format.bgr8, 6)
+    def __init__(self):
+        super().__init__('pointcloudpublisher')
+        
+        # --- 1. CONFIGURATION ROS PUBLISHERS ---
+        self.depth_image_publisher_ = self.create_publisher(Image, 'Realsense/Image/Depth', 10)
+        self.color_image_publisher_ = self.create_publisher(Image, 'Realsense/Image/Color', 10)
+        self.camera_info_publisher_ = self.create_publisher(CameraInfo, 'Realsense/CameraInfo', 10)
+        
+        # Timer à 15Hz (suffisant pour le Pi et plus stable que 30Hz)
+        # Si vous voulez 30Hz, mettez 0.033
+        self.timer = self.create_timer(0.066, self.timer_callback)
+        
+        # --- 2. CONFIGURATION REALSENSE ---
+        self.pipe = rs.pipeline()
+        self.config = rs.config()
+        
+        # On garde votre résolution 424x240 (Très bien pour le Pi)
+        self.config.enable_stream(rs.stream.depth, 424, 240, rs.format.z16, 30)
+        self.config.enable_stream(rs.stream.color, 424, 240, rs.format.bgr8, 30)
 
-		profile = self.pipe.start(self.config)
-		
-		stream_profile = profile.get_stream(rs.stream.depth)
-		self.intrinsics = stream_profile.as_video_stream_profile().get_intrinsics()
+        # Objet d'alignement : Aligner la Profondeur VERS la Couleur
+        self.align = rs.align(rs.stream.color)
 
-		self.decimate = rs.decimation_filter(8)
-		self.align = rs.align(rs.stream.color)
+        # Démarrage du flux
+        profile = self.pipe.start(self.config)
+        
+        # --- 3. CORRECTION MAJEURE : INTRINSÈQUES ---
+        # Puisqu'on aligne sur la couleur, on doit récupérer les infos de la lentille COULEUR
+        stream_profile = profile.get_stream(rs.stream.color) 
+        self.intrinsics = stream_profile.as_video_stream_profile().get_intrinsics()
 
-		depth_sensor = profile.get_device().first_depth_sensor()
-		depth_scale = depth_sensor.get_depth_scale()
-		# print("Depth Scale is: " , depth_scale)
-		
-		self.i = 0
+        # --- 4. STABILISATION (Anti-Crash USB) ---
+        try:
+            # On récupère le capteur RGB
+            color_sensor = profile.get_device().query_sensors()[1]
+            
+            # Désactivation de l'exposition auto pour éviter la saturation USB
+            color_sensor.set_option(rs.option.enable_auto_exposure, 0) # 0 = Off
+            # Réglage manuel (Ajustez 150.0 si l'image est trop sombre/claire)
+            color_sensor.set_option(rs.option.exposure, 150.0) 
+            
+            self.get_logger().info("✅ Auto-Exposure désactivé pour stabilité USB.")
+        except Exception as e:
+            self.get_logger().warn(f"⚠️ Impossible de configurer l'exposition : {e}")
 
-	def timer_callback(self):
-		
-		frames = self.pipe.wait_for_frames()
-	
-		aligned_frames = self.align.process(frames)
-		depth_frame = aligned_frames.get_depth_frame()
-		color_frame = aligned_frames.get_color_frame()
-		
-		if (not depth_frame) or (not color_frame): return
-		
-		now = self.get_clock().now().to_msg()
+        self.bridge = CvBridge()
+        self.get_logger().info("Publisher RealSense Démarré (Mode Aligné).")
 
-		depth_image = np.asanyarray(depth_frame.get_data())
-		color_image = np.asanyarray(color_frame.get_data())
+    def timer_callback(self):
+        try:
+            # 1. Attente des frames
+            frames = self.pipe.wait_for_frames()
+        
+            # 2. ALIGNEMENT (Indispensable)
+            aligned_frames = self.align.process(frames)
+            
+            depth_frame = aligned_frames.get_depth_frame()
+            color_frame = aligned_frames.get_color_frame()
+            
+            if not depth_frame or not color_frame:
+                return
+            
+            # 3. Conversion Numpy
+            depth_image = np.asanyarray(depth_frame.get_data())
+            color_image = np.asanyarray(color_frame.get_data())
 
-		# Convertir les array numpy en image
-		bridge = CvBridge()
-		ros_depth_image_msg = bridge.cv2_to_imgmsg(depth_image, encoding="passthrough")
-		ros_color_image_msg = bridge.cv2_to_imgmsg(color_image, encoding="rgb8")
-		
-		# On recup le message Camera Info
-		camera_info_msg = self.get_camera_info_msg(self.intrinsics)
+            # 4. Préparation du Header (Timestamp unique pour tout le monde)
+            header = Header()
+            header.frame_id = "camera_color_optical_frame" # Frame standard pour RGB
+            header.stamp = self.get_clock().now().to_msg()
 
-		# Création du header du message
-		header = Header()
-		header.frame_id = "camera_depth_optical_frame"
-		header.stamp = self.get_clock().now().to_msg()
+            # 5. Conversion ROS
+            # CORRECTION : Encoding bgr8 (et non rgb8) pour OpenCV
+            ros_color_image_msg = self.bridge.cv2_to_imgmsg(color_image, encoding="bgr8")
+            ros_depth_image_msg = self.bridge.cv2_to_imgmsg(depth_image, encoding="passthrough")
+            
+            # 6. Camera Info
+            camera_info_msg = self.get_camera_info_msg(self.intrinsics)
 
-		# Ajout du header au message camera info
-		camera_info_msg.header = header
-		self.camera_info_publisher_.publish(camera_info_msg)
+            # Assignation des headers
+            camera_info_msg.header = header
+            ros_color_image_msg.header = header
+            ros_depth_image_msg.header = header
 
-		# Ajout du header au message color image
-		ros_color_image_msg.header = header
-		self.color_image_publisher_.publish(ros_color_image_msg)
-		
-		# Ajout du header au message depth image
-		ros_depth_image_msg.header = header
-		self.depth_image_publisher_.publish(ros_depth_image_msg)
+            # 7. Publication
+            self.camera_info_publisher_.publish(camera_info_msg)
+            self.color_image_publisher_.publish(ros_color_image_msg)
+            self.depth_image_publisher_.publish(ros_depth_image_msg)
 
-		# Code pour le nuage de points
+        except RuntimeError as e:
+            # On attrape les erreurs de timeout sans crasher tout le node
+            self.get_logger().warn(f"Erreur Frame RealSense : {e}")
 
-		# points = self.pc.calculate(depth_frame)
-		# decimated = decimate.process(aligned_frames).as_frameset()
-		
-		# verts = np.asanyarray(points.get_vertices()).view(np.float32).reshape(-1, 3)
-		# pc_msg = pc2.create_cloud_xyz32(header, verts)
-	
-		# self.point_cloud_publisher_.publish(pc_msg)	
-		
-		
-		
-		''' jsplu a quoi ca sert jsuis sah
-		color_image = np.asanyarray(color_frame.get_data()).reshape(-1,3)
-		
-		r = color_image_flat[:,0].astype(np.uint32)
-		g = color_image_flat[:,1].astype(np.uint32)
-		b = color_image_flat[:,2].astype(np.uint32)
-		rgb = np.left_shift(r, 16) | np.left_shift(g, 8) | b
-		rgb.dtype = np.float32
-		
-		dtype_cloud = [('x', np.float32), ('y', np.float32), ('z', np.float32), ('rgb', np.float32)]
-		cloud_data = np.zeros(verts.shape[0], dtype=dtype_cloud)
-		cloud_data['x'] = verts[:, 0]
-		cloud_data['y'] = verts[:, 1]
-		cloud_data['z'] = verts[:, 2]
-		cloud_data['rgb'] = rgb
-		
-		header = Header()
-		header.frame_id = "frame_RS_D435i"  # Remplace par le nom de ta frame TF
-		# header.stamp = ... (idéalement, utilise l'horloge ROS ou le timestamp realsense)
+    def get_camera_info_msg(self, intrinsics):
+        camera_info_msg = CameraInfo()
+        camera_info_msg.width = intrinsics.width
+        camera_info_msg.height = intrinsics.height
 
-		
-		point_cloud_msg = pc2.create_cloud(
-			 header,
-			 fields=[
-				  PointField(name='x', offset=0, datatype=PointField.FLOAT32, count=1),
-				  PointField(name='y', offset=4, datatype=PointField.FLOAT32, count=1),
-				  PointField(name='z', offset=8, datatype=PointField.FLOAT32, count=1),
-			 ],
-			 points=cloud_data
-		)
-		
-		self.publisher_.publish(point_cloud_msg)
-		'''
-
-		self.i+=1
-
-	def get_camera_info_msg(self, intrinsics):
-		camera_info_msg = CameraInfo()
-		camera_info_msg.width = intrinsics.width
-		camera_info_msg.height = intrinsics.height
-
-		camera_info_msg.k = [
-			intrinsics.fx, 0.0, intrinsics.ppx,
-			0.0, intrinsics.fy, intrinsics.ppy,
-			0.0, 0.0, 1.0
-		]
-		distortion_model_map = {
-			rs.distortion.none: 'none',
-			rs.distortion.brown_conrady: 'plumb_bob',
-			rs.distortion.ftheta: 'fisheye',
-			# Ajoutez d'autres modèles si vous changez de type de caméra
-		}
-
-		camera_info_msg.distortion_model = distortion_model_map.get(
-			intrinsics.model, 
-			'unknown',
-		)
-		camera_info_msg.d = list(intrinsics.coeffs) 
-		
-		return camera_info_msg
+        # Matrice Intrinsèque K [fx, 0, cx, 0, fy, cy, 0, 0, 1]
+        camera_info_msg.k = [
+            float(intrinsics.fx), 0.0, float(intrinsics.ppx),
+            0.0, float(intrinsics.fy), float(intrinsics.ppy),
+            0.0, 0.0, 1.0
+        ]
+        
+        # Modèle de distorsion
+        distortion_model_map = {
+            rs.distortion.none: 'none',
+            rs.distortion.brown_conrady: 'plumb_bob',
+            rs.distortion.inverse_brown_conrady: 'plumb_bob',
+            rs.distortion.ftheta: 'fisheye',
+            rs.distortion.kannala_brandt4: 'fisheye',
+        }
+        camera_info_msg.distortion_model = distortion_model_map.get(intrinsics.model, 'plumb_bob')
+        
+        # Coefficients D
+        camera_info_msg.d = list(intrinsics.coeffs)
+        
+        # Matrice de Projection P (identique à K pour une caméra simple sans rectification stéréo complexe)
+        camera_info_msg.p = [
+            float(intrinsics.fx), 0.0, float(intrinsics.ppx), 0.0,
+            0.0, float(intrinsics.fy), float(intrinsics.ppy), 0.0,
+            0.0, 0.0, 1.0, 0.0
+        ]
+        
+        return camera_info_msg
 
 
 def main(args=None):
-	rclpy.init(args=args) # Initialize the ROS2 Python system
-	node = PointCloudPublisher() # Create an instance of the Listener node
-	rclpy.spin(node) # Keep the node running, listening for messages
-	node.destroy_node() # Cleanup when the node is stopped
-	rclpy.shutdown() # It cleans up all ROS2 resources used by the node
+    rclpy.init(args=args)
+    node = PointCloudPublisher()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
 
 if __name__ == '__main__':
-	main()
+    main()
