@@ -11,50 +11,50 @@ class PointCloudPublisher(Node):
         super().__init__('pointcloudpublisher')
         
         # --- 1. CONFIGURATION ROS ---
-        # Queue size 10 est standard
         self.depth_image_publisher_ = self.create_publisher(Image, 'Realsense/Image/Depth', 10)
         self.color_image_publisher_ = self.create_publisher(Image, 'Realsense/Image/Color', 10)
         self.camera_info_publisher_ = self.create_publisher(CameraInfo, 'Realsense/CameraInfo', 10)
         
-        # Timer calé sur 6 FPS (1/6 ≈ 0.167s)
+        # Timer 6 FPS
         self.timer = self.create_timer(0.167, self.timer_callback)
-        
         self.bridge = CvBridge()
 
-        # --- 2. CONFIGURATION REALSENSE (MINIMALISTE) ---
+        # --- 2. CONFIGURATION REALSENSE ---
         self.pipe = rs.pipeline()
         self.config = rs.config()
         
-        # On force 6 FPS pour soulager le Raspberry Pi et l'USB
+        # 6 FPS (Stabilité USB maximale)
         self.config.enable_stream(rs.stream.depth, 424, 240, rs.format.z16, 6)
         self.config.enable_stream(rs.stream.color, 424, 240, rs.format.bgr8, 6)
 
-        # Outils logiciels (ne touchent pas au hardware)
+        # --- 3. FILTRES LOGICIELS (C'est la clé !) ---
+        # 1 = mode 'flling' (remplit les zones vides avec la valeur voisine)
         self.hole_filling = rs.hole_filling_filter(1) 
+        
+        # Alignement Depth -> Color
         self.align = rs.align(rs.stream.color)
 
-        self.get_logger().info("Démarrage du flux (Mode Stable)...")
+        self.get_logger().info("Démarrage Realsense (Mode Stable + Hole Filling)...")
 
         try:
-            # Démarrage simple, sans options exotiques
+            # Démarrage du flux
             profile = self.pipe.start(self.config)
             
-            # Récupération des infos techniques de la lentille (Intrinsèques)
+            # Récupération Intrinsèques
             stream_profile = profile.get_stream(rs.stream.color) 
             self.intrinsics = stream_profile.as_video_stream_profile().get_intrinsics()
             
-            self.get_logger().info("✅ Caméra démarrée avec succès.")
+            self.get_logger().info("✅ Caméra opérationnelle.")
 
         except Exception as e:
-            self.get_logger().fatal(f"❌ Impossible de démarrer la caméra : {e}")
-            self.get_logger().fatal("👉 Si ce message persiste : Débranchez/Rebranchez l'USB.")
+            self.get_logger().fatal(f"🔥 Erreur Démarrage : {e}")
 
     def timer_callback(self):
         try:
-            # Timeout généreux (2s) pour éviter les crashs si une frame saute
+            # Timeout large
             frames = self.pipe.wait_for_frames(timeout_ms=2000)
             
-            # 1. Alignement (Depth -> Color)
+            # 1. ALIGNEMENT
             aligned_frames = self.align.process(frames)
             depth_frame = aligned_frames.get_depth_frame()
             color_frame = aligned_frames.get_color_frame()
@@ -62,65 +62,46 @@ class PointCloudPublisher(Node):
             if not depth_frame or not color_frame:
                 return
 
-            # 2. Filtre Logiciel (Bouchage des trous)
-            # On le garde car c'est purement mathématique (CPU Pi) et aide la détection
+            # 2. FILTRE HOLE FILLING (CRITIQUE)
+            # Transforme les '0' en valeurs estimées.
+            # Augmente drastiquement le nombre de pixels valides sur la balle.
             depth_frame = self.hole_filling.process(depth_frame)
 
-            # 3. Conversion en images Numpy
+            # 3. Conversion
             depth_image = np.asanyarray(depth_frame.get_data())
             color_image = np.asanyarray(color_frame.get_data())
 
-            # 4. Création des messages ROS
             header = Header()
             header.frame_id = "camera_color_optical_frame"
             header.stamp = self.get_clock().now().to_msg()
 
-            # Message Couleur
+            # Publication
             ros_color_image_msg = self.bridge.cv2_to_imgmsg(color_image, encoding="bgr8")
             ros_color_image_msg.header = header
-            
-            # Message Profondeur
+            self.color_image_publisher_.publish(ros_color_image_msg)
+
             ros_depth_image_msg = self.bridge.cv2_to_imgmsg(depth_image, encoding="passthrough")
             ros_depth_image_msg.header = header
+            self.depth_image_publisher_.publish(ros_depth_image_msg)
             
-            # Message Info Caméra
+            # Info
             camera_info_msg = self.get_camera_info_msg(self.intrinsics)
             camera_info_msg.header = header
-
-            # 5. Publication
-            self.color_image_publisher_.publish(ros_color_image_msg)
-            self.depth_image_publisher_.publish(ros_depth_image_msg)
             self.camera_info_publisher_.publish(camera_info_msg)
 
         except RuntimeError:
-            # On ignore silencieusement les frames ratées (fréquent sur USB Pi4)
+            pass # On ignore les frames perdues
+        except Exception:
             pass
-        except Exception as e:
-            self.get_logger().error(f"Erreur inattendue : {e}")
 
     def get_camera_info_msg(self, intrinsics):
         camera_info_msg = CameraInfo()
         camera_info_msg.width = intrinsics.width
         camera_info_msg.height = intrinsics.height
-        
-        # Matrice K (Intrinsèque)
-        camera_info_msg.k = [
-            float(intrinsics.fx), 0.0, float(intrinsics.ppx),
-            0.0, float(intrinsics.fy), float(intrinsics.ppy),
-            0.0, 0.0, 1.0
-        ]
-        
-        # Modèle de distorsion standard
+        camera_info_msg.k = [float(intrinsics.fx), 0.0, float(intrinsics.ppx), 0.0, float(intrinsics.fy), float(intrinsics.ppy), 0.0, 0.0, 1.0]
         camera_info_msg.distortion_model = 'plumb_bob'
         camera_info_msg.d = list(intrinsics.coeffs)
-        
-        # Matrice P (Projection)
-        camera_info_msg.p = [
-            float(intrinsics.fx), 0.0, float(intrinsics.ppx), 0.0,
-            0.0, float(intrinsics.fy), float(intrinsics.ppy), 0.0,
-            0.0, 0.0, 1.0, 0.0
-        ]
-        
+        camera_info_msg.p = [float(intrinsics.fx), 0.0, float(intrinsics.ppx), 0.0, 0.0, float(intrinsics.fy), float(intrinsics.ppy), 0.0, 0.0, 0.0, 1.0, 0.0]
         return camera_info_msg
 
 def main(args=None):
