@@ -24,6 +24,12 @@ class BallDetectorPointCloud(Node):
         self.model_w = 320 
         self.model_h = 320
 
+        # Paramètres de la balle (AJUSTE SELON TA BALLE RÉELLE)
+        self.ball_radius = 0.035  # 3.5cm de rayon (7cm de diamètre)
+        self.radius_tolerance = 0.02  # ±2cm de tolérance
+        self.ransac_iterations = 80  # Nombre d'itérations RANSAC
+        self.min_inliers = 20  # Minimum de points cohérents pour valider
+
         # IA Init
         try:
             delegate = tflite.load_delegate('libedgetpu.so.1')
@@ -51,7 +57,7 @@ class BallDetectorPointCloud(Node):
             [self.sub_rgb, self.sub_depth, self.sub_info], queue_size=10, slop=0.5
         )
         self.ts.registerCallback(self.callback)
-        self.get_logger().info("✅ Algorithme Nuage de Points 3D Prêt.")
+        self.get_logger().info("✅ Algorithme RANSAC Sphère 3D Prêt.")
 
     def callback(self, rgb_msg, depth_msg, info_msg):
         try:
@@ -74,17 +80,17 @@ class BallDetectorPointCloud(Node):
         
         candidates = detections[detections[:, 4] > self.conf_threshold]
 
-        # Récupération de la matrice intrinsèque K (pour les calculs 3D)
+        # Récupération de la matrice intrinsèque K
         fx = info_msg.k[0]
         fy = info_msg.k[4]
         cx_cam = info_msg.k[2]
         cy_cam = info_msg.k[5]
 
-        best_z = 999.0 # Plus c'est petit, mieux c'est
+        best_score = 0  # Score = inliers * confidence
         final_ball_3d = None
 
         for det in candidates:
-            score = det[4]
+            confidence = det[4]
             mx, my, mw, mh = det[0:4]
             
             # Bounding Box Image
@@ -101,54 +107,89 @@ class BallDetectorPointCloud(Node):
             y_min = max(0, int(cy_box - h/2))
             y_max = min(cam_h, int(cy_box + h/2))
 
-            # Crop de la profondeur
-            depth_roi = cv_depth[y_min:y_max, x_min:x_max]
+            # --- 2. CONSTRUCTION DU NUAGE DE POINTS 3D ---
+            points_3d = []
+            for i in range(y_min, y_max):
+                for j in range(x_min, x_max):
+                    z_mm = cv_depth[i, j]
+                    # Filtre: depth valide et < 1.5m
+                    if 0 < z_mm < 1500:
+                        z_m = z_mm / 1000.0
+                        # Déprojection 3D (modèle sténopé)
+                        x_m = (j - cx_cam) * z_m / fx
+                        y_m = (i - cy_cam) * z_m / fy
+                        points_3d.append([x_m, y_m, z_m])
             
-            # --- 2. TRAITEMENT NUAGE DE POINTS (La partie importante) ---
-            
-            # On ignore les pixels vides (0) et trop loins (> 1.5m)
-            valid_mask = (depth_roi > 0) & (depth_roi < 1500)
-            valid_depths = depth_roi[valid_mask]
-
-            if len(valid_depths) > 10:
-                # A. Trouver le "plan avant" de l'objet (Front Cluster)
-                # On trie les pixels. Les plus petits = les plus proches = la surface de la balle
-                sorted_depths = np.sort(valid_depths)
-                
-                # On prend les 20% les plus proches. 
-                # C'est la technique anti-mur : le mur est toujours derrière la balle.
-                limit_idx = int(len(sorted_depths) * 0.20)
-                if limit_idx < 1: limit_idx = 1
-                
-                # On calcule la distance Z moyenne de cette "face avant"
-                closest_cluster = sorted_depths[:limit_idx]
-                z_mm = np.mean(closest_cluster)
-                z_m = z_mm / 1000.0
-
-                # B. Calcul des Coordonnées X, Y réelles (Déprojection)
-                # On utilise le centre de la boite (cx_box, cy_box) et la distance trouvée Z
-                # Formule du modèle Sténopé (Pinhole)
-                x_m = (cx_box - cx_cam) * z_m / fx
-                y_m = (cy_box - cy_cam) * z_m / fy
-
-                # C. Validation
-                # On garde la balle la plus proche et la plus confiante
-                if z_m < best_z:
-                    best_z = z_m
-                    final_ball_3d = (x_m, y_m, z_m)
-                    
-                    # Dessin Vert
-                    cv2.rectangle(debug_image, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
-                    cv2.putText(debug_image, f"{z_m:.2f}m", (x_min, y_min-10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-            else:
-                # Dessin Rouge (Rejeté)
+            if len(points_3d) < 30:
+                # Pas assez de points 3D, on rejette
                 cv2.rectangle(debug_image, (x_min, y_min), (x_max, y_max), (0, 0, 255), 1)
+                cv2.putText(debug_image, "Low pts", (x_min, y_min-10), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+                continue
 
-        # --- 3. PUBLICATION ---
+            points_3d = np.array(points_3d)
+
+            # --- 3. RANSAC : DÉTECTION DE SPHÈRE ---
+            best_inliers = 0
+            best_center = None
+            
+            for iteration in range(self.ransac_iterations):
+                # Échantillonner 4 points aléatoires
+                if len(points_3d) < 4:
+                    break
+                    
+                sample_idx = np.random.choice(len(points_3d), 4, replace=False)
+                sample_points = points_3d[sample_idx]
+                
+                # Hypothèse: le centre de la sphère = moyenne des 4 points
+                center_candidate = np.mean(sample_points, axis=0)
+                
+                # Calculer la distance de TOUS les points au centre
+                distances = np.linalg.norm(points_3d - center_candidate, axis=1)
+                
+                # Compter les "inliers" = points à environ ball_radius du centre
+                inliers_mask = np.abs(distances - self.ball_radius) < self.radius_tolerance
+                num_inliers = np.sum(inliers_mask)
+                
+                # Garder le meilleur modèle
+                if num_inliers > best_inliers:
+                    best_inliers = num_inliers
+                    # Raffiner le centre avec TOUS les inliers (pas juste les 4)
+                    inlier_points = points_3d[inliers_mask]
+                    best_center = np.mean(inlier_points, axis=0)
+            
+            # --- 4. VALIDATION ---
+            if best_inliers >= self.min_inliers and best_center is not None:
+                x_m, y_m, z_m = best_center
+                
+                # Vérifications de cohérence
+                if z_m > 0.1 and z_m < 2.0:  # Entre 10cm et 2m
+                    # Score combiné: inliers * confidence
+                    current_score = best_inliers * confidence
+                    
+                    if current_score > best_score:
+                        best_score = current_score
+                        final_ball_3d = (x_m, y_m, z_m)
+                        
+                        # Dessin VERT (Validé)
+                        cv2.rectangle(debug_image, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
+                        info_text = f"{z_m:.2f}m | {best_inliers}pts | {confidence:.2f}"
+                        cv2.putText(debug_image, info_text, (x_min, y_min-10), 
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+            else:
+                # Rejeté: pas assez d'inliers ou pas de sphère trouvée
+                cv2.rectangle(debug_image, (x_min, y_min), (x_max, y_max), (0, 165, 255), 1)
+                cv2.putText(debug_image, f"Reject ({best_inliers})", (x_min, y_min-10), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 165, 255), 1)
+
+        # --- 5. PUBLICATION ---
         if final_ball_3d:
             gx, gy, gz = final_ball_3d
             self.publish_result(rgb_msg.header, gx, gy, gz)
-            self.get_logger().info(f"📍 Balle 3D: X={gx:.2f} Y={gy:.2f} Z={gz:.2f}")
+            self.get_logger().info(f"🎯 Balle 3D RANSAC: X={gx:.3f} Y={gy:.3f} Z={gz:.3f}m")
+        else:
+            # Publier un marker invisible pour signaler "pas de balle"
+            self.publish_no_detection(rgb_msg.header)
 
         # Debug Image
         try:
@@ -159,6 +200,7 @@ class BallDetectorPointCloud(Node):
             pass
 
     def publish_result(self, header, x, y, z):
+        # Point 3D
         pt = PointStamped()
         pt.header = header
         pt.point.x, pt.point.y, pt.point.z = float(x), float(y), float(z)
@@ -175,13 +217,23 @@ class BallDetectorPointCloud(Node):
         marker.pose.position.y = y
         marker.pose.position.z = z
         marker.pose.orientation.w = 1.0
-        marker.scale.x = 0.1 # 10cm de diamètre
-        marker.scale.y = 0.1
-        marker.scale.z = 0.1
+        # Diamètre = 2 * rayon
+        marker.scale.x = self.ball_radius * 2
+        marker.scale.y = self.ball_radius * 2
+        marker.scale.z = self.ball_radius * 2
         marker.color.a = 1.0
         marker.color.r = 0.0
         marker.color.g = 1.0
         marker.color.b = 0.0
+        self.pub_marker.publish(marker)
+
+    def publish_no_detection(self, header):
+        """Publie un marker DELETE pour indiquer qu'aucune balle n'est détectée"""
+        marker = Marker()
+        marker.header = header
+        marker.ns = "ball_3d"
+        marker.id = 0
+        marker.action = Marker.DELETE
         self.pub_marker.publish(marker)
 
 def main(args=None):
