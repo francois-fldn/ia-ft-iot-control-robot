@@ -194,8 +194,8 @@ class BallDetectorDebug(Node):
                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
                 
                 self.get_logger().info(f"⚽ Balle OK | Conf: {best_conf:.2f} | Z: {z_m:.3f}m | (Pixels utilisés: {idx_end-idx_start})")
-            else:
-                self.get_logger().warn("Balle vue mais pas de profondeur valide (trop près ou reflets ?)")
+            #else:
+                #self.get_logger().warn("Balle vue mais pas de profondeur valide (trop près ou reflets ?)")
 
         # Publication Image Debug
         try:
