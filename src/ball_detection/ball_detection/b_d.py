@@ -9,15 +9,16 @@ import tflite_runtime.interpreter as tflite
 from ament_index_python.packages import get_package_share_directory
 import os
 
-class BallDetectorHeadless(Node):
+class BallDetectorSmart(Node):
     def __init__(self):
-        super().__init__('ball_detector_headless')
+        super().__init__('ball_detector_smart')
 
         # --- CONFIGURATION ---
         package_share_directory = get_package_share_directory('ball_detection')
         model_filename = 'yolov5n-int8_edgetpu320.tflite' 
         self.model_path = os.path.join(package_share_directory, 'models', model_filename)
 
+        # On garde un seuil bas pour capter les vraies balles
         self.conf_threshold = 0.25 
         self.model_w = 320 
         self.model_h = 320
@@ -41,13 +42,11 @@ class BallDetectorHeadless(Node):
         self.sub_rgb = message_filters.Subscriber(self, Image, '/Realsense/Image/Color')
         self.sub_depth = message_filters.Subscriber(self, Image, '/Realsense/Image/Depth')
         
-        # Synchro large (0.5s) pour accepter les lags réseau/wifi
         self.ts = message_filters.ApproximateTimeSynchronizer(
             [self.sub_rgb, self.sub_depth], queue_size=10, slop=0.5
         )
         self.ts.registerCallback(self.callback)
-        self.get_logger().info("✅ Mode TEXTE (Headless) prêt. Regardez les logs ci-dessous...")
-        self.get_logger().info("-------------------------------------------------------------")
+        self.get_logger().info("✅ Mode FILTRÉ prêt. En attente...")
 
     def callback(self, rgb_msg, depth_msg):
         try:
@@ -58,7 +57,7 @@ class BallDetectorHeadless(Node):
 
         cam_h, cam_w = cv_rgb.shape[:2]
 
-        # Inférence IA
+        # Inférence
         img_resized = cv2.resize(cv_rgb, (self.model_w, self.model_h))
         input_data = cv2.cvtColor(img_resized, cv2.COLOR_BGR2RGB)
         input_data = np.expand_dims(input_data, axis=0)
@@ -69,74 +68,65 @@ class BallDetectorHeadless(Node):
         
         candidates = detections[detections[:, 4] > self.conf_threshold]
 
-        if len(candidates) == 0:
-            # Petit point pour dire que ça tourne, sans spammer
-            # print(".", end="", flush=True) 
-            pass
-
         for det in candidates:
             score = det[4]
             mx, my, mw, mh = det[0:4]
             
-            # Conversion coordonnées
+            # Conversion
             scale_x = cam_w / self.model_w
             scale_y = cam_h / self.model_h
             cx, cy = int(mx * scale_x), int(my * scale_y)
             w, h = int(mw * scale_x), int(mh * scale_y)
+            
+            # --- FILTRES ANTI-FANTÔME (La partie importante) ---
+            
+            # 1. Filtre de Taille relative
+            # Si la boite fait plus de 40% de l'image, c'est probablement le mur entier détecté par erreur
+            area_img = cam_w * cam_h
+            area_box = w * h
+            ratio_area = area_box / area_img
+            
+            if ratio_area > 0.30:
+                self.get_logger().warn(f"🚫 REJETÉ (Trop gros): {ratio_area*100:.1f}% de l'écran")
+                continue # On passe au suivant
 
-            # Découpage de la zone de profondeur (ROI)
-            x_min = max(0, int(cx - w/2))
-            x_max = min(cam_w, int(cx + w/2))
-            y_min = max(0, int(cy - h/2))
-            y_max = min(cam_h, int(cy + h/2))
+            # 2. Filtre de Forme (Ratio Aspect)
+            # Une balle est carrée dans la boite (ratio ~1.0). Si ratio > 2.0 ou < 0.5, c'est une barre ou un truc plat.
+            if w > 0 and h > 0:
+                aspect_ratio = w / h
+                if aspect_ratio < 0.5 or aspect_ratio > 2.0:
+                    self.get_logger().warn(f"🚫 REJETÉ (Forme bizarre): Ratio {aspect_ratio:.2f}")
+                    continue
 
+            # 3. Filtre de Bordure
+            # Si le centre est collé au bord de l'image, c'est souvent un artefact
+            if cx < 20 or cx > (cam_w - 20) or cy < 20 or cy > (cam_h - 20):
+                 self.get_logger().warn(f"🚫 REJETÉ (Bordure)")
+                 continue
+
+            # --- Si on arrive ici, c'est probablement une vraie balle ---
+            
+            # Analyse Profondeur
+            x_min, x_max = max(0, int(cx - w/2)), min(cam_w, int(cx + w/2))
+            y_min, y_max = max(0, int(cy - h/2)), min(cam_h, int(cy + h/2))
+            
             depth_roi = cv_depth[y_min:y_max, x_min:x_max]
+            valid_pixels = depth_roi[(depth_roi > 0) & (depth_roi < 3000)] # Max 3m
             
-            # --- ANALYSE STATISTIQUE (C'est ici que ça se joue) ---
-            total_pixels = depth_roi.size
-            if total_pixels == 0: continue
-
-            # On compte les pixels valides (> 0) et pertinents (< 2m)
-            valid_pixels = depth_roi[(depth_roi > 0) & (depth_roi < 2000)]
-            count_valid = len(valid_pixels)
-            
-            # Ratio de remplissage (Coverage)
-            coverage_percent = (count_valid / total_pixels) * 100
-            
-            dist_msg = ""
-            status_icon = ""
-
-            if count_valid > 0:
-                median_dist_mm = np.median(valid_pixels)
-                median_dist_m = median_dist_mm / 1000.0
-                dist_msg = f"{median_dist_m:.2f}m"
+            if len(valid_pixels) > 0:
+                coverage = (len(valid_pixels) / depth_roi.size) * 100
+                median_z = np.median(valid_pixels) / 1000.0
+                
+                # LOG VALIDÉ
+                self.get_logger().info(
+                    f"✅ BALLE VALIDÉE | Dist: {median_z:.2f}m | Conf: {score:.2f} | Taille: {w}x{h}"
+                )
             else:
-                dist_msg = "N/A"
-
-            # --- DIAGNOSTIC AUTOMATIQUE ---
-            if coverage_percent < 10.0:
-                status_icon = "🔴 FANTÔME"
-                advice = "MATIÈRE INVISIBLE AUX IR (Trop noir/brillant)"
-            elif coverage_percent < 40.0:
-                status_icon = "🟠 FRAGILE"
-                advice = "Détection partielle (Reflets ?)"
-            else:
-                status_icon = "🟢 SOLIDE"
-                advice = "Balle bien vue"
-
-            # Affichage console formaté
-            log_msg = (
-                f"\n--- BALL DETECTED ({score:.2f}) ---\n"
-                f"   📍 Distance  : {dist_msg}\n"
-                f"   📊 Couverture: {coverage_percent:.1f}% des pixels valides\n"
-                f"   🩺 Diagnostic: {status_icon} -> {advice}\n"
-                f"-----------------------------------"
-            )
-            self.get_logger().info(log_msg)
+                 self.get_logger().info(f"⚠️ Balle vue (Conf {score:.2f}) mais profondeur vide/trop loin")
 
 def main(args=None):
     rclpy.init(args=args)
-    node = BallDetectorHeadless()
+    node = BallDetectorSmart()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
