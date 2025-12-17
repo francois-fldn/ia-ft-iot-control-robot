@@ -188,17 +188,11 @@ def main(args=None):
     rclpy.init(args=args)
     node = BallDetectorPointCloud()
     try:
-        node = BallTrackerNode()
         rclpy.spin(node)
     except KeyboardInterrupt:
         pass
-    except RuntimeError as e:
-        # Capture l'erreur critique si l'initialisation du modèle a échoué
-        print(f"Erreur fatale lors de l'initialisation du nœud: {e}")
     finally:
-        # Assure l'arrêt propre
-        if 'node' in locals() and node is not None:
-             node.destroy_node()
+        node.destroy_node()
         rclpy.shutdown()
 
 if __name__ == '__main__':
