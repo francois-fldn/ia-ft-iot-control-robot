@@ -128,11 +128,17 @@ def main(args=None):
     rclpy.init(args=args)
     node = BallDetectorSmart()
     try:
+        node = BallTrackerNode()
         rclpy.spin(node)
     except KeyboardInterrupt:
         pass
+    except RuntimeError as e:
+        # Capture l'erreur critique si l'initialisation du modèle a échoué
+        print(f"Erreur fatale lors de l'initialisation du nœud: {e}")
     finally:
-        node.destroy_node()
+        # Assure l'arrêt propre
+        if 'node' in locals() and node is not None:
+             node.destroy_node()
         rclpy.shutdown()
 
 if __name__ == '__main__':
