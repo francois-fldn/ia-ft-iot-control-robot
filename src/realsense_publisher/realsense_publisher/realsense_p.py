@@ -5,137 +5,122 @@ from std_msgs.msg import Header
 from cv_bridge import CvBridge
 import pyrealsense2 as rs
 import numpy as np
-import time
 
 class PointCloudPublisher(Node):
     def __init__(self):
         super().__init__('pointcloudpublisher')
         
         # --- 1. CONFIGURATION ROS ---
+        # Queue size 10 est standard
         self.depth_image_publisher_ = self.create_publisher(Image, 'Realsense/Image/Depth', 10)
         self.color_image_publisher_ = self.create_publisher(Image, 'Realsense/Image/Color', 10)
         self.camera_info_publisher_ = self.create_publisher(CameraInfo, 'Realsense/CameraInfo', 10)
         
-        # Timer à 6 FPS
+        # Timer calé sur 6 FPS (1/6 ≈ 0.167s)
         self.timer = self.create_timer(0.167, self.timer_callback)
         
-        # --- 2. CONFIGURATION REALSENSE ---
+        self.bridge = CvBridge()
+
+        # --- 2. CONFIGURATION REALSENSE (MINIMALISTE) ---
         self.pipe = rs.pipeline()
         self.config = rs.config()
         
+        # On force 6 FPS pour soulager le Raspberry Pi et l'USB
         self.config.enable_stream(rs.stream.depth, 424, 240, rs.format.z16, 6)
         self.config.enable_stream(rs.stream.color, 424, 240, rs.format.bgr8, 6)
 
-        # Filtres logiciels
+        # Outils logiciels (ne touchent pas au hardware)
         self.hole_filling = rs.hole_filling_filter(1) 
         self.align = rs.align(rs.stream.color)
 
-        # --- 3. REGLAGES HARDWARE (AVANT LE START) ---
-        # C'est ici la correction majeure : on configure le device avant de saturer l'USB
-        self.get_logger().info("Recherche du périphérique Realsense...")
-        
+        self.get_logger().info("Démarrage du flux (Mode Stable)...")
+
         try:
-            # On récupère le contexte pour accéder au device sans démarrer le pipe
-            ctx = rs.context()
-            if len(ctx.devices) > 0:
-                dev = ctx.devices[0] # La première caméra trouvée
-                self.get_logger().info(f"Caméra trouvée : {dev.get_info(rs.camera_info.name)}")
-                
-                # Réglages Capteur Profondeur
-                depth_sensor = dev.first_depth_sensor()
-                self.set_option_robust(depth_sensor, rs.option.visual_preset, 4, "High Density Preset")
-                self.set_option_robust(depth_sensor, rs.option.laser_power, 360.0, "Laser Power Max")
-
-                # Réglages Capteur Couleur
-                # Note: Sur D435i, le capteur couleur est souvent le 2ème (index 1)
-                for s in dev.query_sensors():
-                    if s.get_info(rs.camera_info.name) == 'RGB Camera':
-                        self.set_option_robust(s, rs.option.enable_auto_exposure, 0, "Auto-Exposure OFF")
-                        self.set_option_robust(s, rs.option.exposure, 150.0, "Exposure Manual")
-            else:
-                self.get_logger().warn("⚠️ Aucune caméra Realsense détectée par le contexte !")
-
-        except Exception as e:
-            self.get_logger().error(f"Erreur Configuration Initiale : {e}")
-
-        # --- 4. DEMARRAGE DU FLUX ---
-        self.get_logger().info("Démarrage du flux vidéo...")
-        try:
+            # Démarrage simple, sans options exotiques
             profile = self.pipe.start(self.config)
             
-            # Récupération Intrinsèques
+            # Récupération des infos techniques de la lentille (Intrinsèques)
             stream_profile = profile.get_stream(rs.stream.color) 
             self.intrinsics = stream_profile.as_video_stream_profile().get_intrinsics()
             
-            self.bridge = CvBridge()
-            self.get_logger().info("✅ Publisher RealSense Démarré & Configuré.")
-            
+            self.get_logger().info("✅ Caméra démarrée avec succès.")
+
         except Exception as e:
-            self.get_logger().fatal(f"Impossible de démarrer le flux : {e}")
-            # Si ça plante ici, c'est souvent un problème de câble USB
-
-    def set_option_robust(self, sensor, option, value, name):
-        """ Tente d'appliquer une option 3 fois avant d'abandonner """
-        if not sensor.supports(option):
-            return
-
-        for i in range(3):
-            try:
-                sensor.set_option(option, value)
-                self.get_logger().info(f"   -> OK : {name}")
-                return # Succès
-            except RuntimeError:
-                time.sleep(0.2) # Petite pause et on réessaie
-        
-        self.get_logger().warn(f"   -> ⚠️ ECHEC : {name} (Timeout)")
+            self.get_logger().fatal(f"❌ Impossible de démarrer la caméra : {e}")
+            self.get_logger().fatal("👉 Si ce message persiste : Débranchez/Rebranchez l'USB.")
 
     def timer_callback(self):
         try:
-            frames = self.pipe.wait_for_frames(timeout_ms=5000)
+            # Timeout généreux (2s) pour éviter les crashs si une frame saute
+            frames = self.pipe.wait_for_frames(timeout_ms=2000)
             
-            try:
-                aligned_frames = self.align.process(frames)
-                depth_frame = aligned_frames.get_depth_frame()
-                color_frame = aligned_frames.get_color_frame()
-                
-                if not depth_frame or not color_frame:
-                    return
-
-                depth_frame = self.hole_filling.process(depth_frame)
-
-            except RuntimeError:
+            # 1. Alignement (Depth -> Color)
+            aligned_frames = self.align.process(frames)
+            depth_frame = aligned_frames.get_depth_frame()
+            color_frame = aligned_frames.get_color_frame()
+            
+            if not depth_frame or not color_frame:
                 return
 
+            # 2. Filtre Logiciel (Bouchage des trous)
+            # On le garde car c'est purement mathématique (CPU Pi) et aide la détection
+            depth_frame = self.hole_filling.process(depth_frame)
+
+            # 3. Conversion en images Numpy
             depth_image = np.asanyarray(depth_frame.get_data())
             color_image = np.asanyarray(color_frame.get_data())
 
+            # 4. Création des messages ROS
             header = Header()
             header.frame_id = "camera_color_optical_frame"
             header.stamp = self.get_clock().now().to_msg()
 
+            # Message Couleur
             ros_color_image_msg = self.bridge.cv2_to_imgmsg(color_image, encoding="bgr8")
-            ros_depth_image_msg = self.bridge.cv2_to_imgmsg(depth_image, encoding="passthrough")
+            ros_color_image_msg.header = header
             
+            # Message Profondeur
+            ros_depth_image_msg = self.bridge.cv2_to_imgmsg(depth_image, encoding="passthrough")
+            ros_depth_image_msg.header = header
+            
+            # Message Info Caméra
             camera_info_msg = self.get_camera_info_msg(self.intrinsics)
             camera_info_msg.header = header
-            ros_color_image_msg.header = header
-            ros_depth_image_msg.header = header
 
-            self.camera_info_publisher_.publish(camera_info_msg)
+            # 5. Publication
             self.color_image_publisher_.publish(ros_color_image_msg)
             self.depth_image_publisher_.publish(ros_depth_image_msg)
+            self.camera_info_publisher_.publish(camera_info_msg)
 
-        except Exception as e:
+        except RuntimeError:
+            # On ignore silencieusement les frames ratées (fréquent sur USB Pi4)
             pass
+        except Exception as e:
+            self.get_logger().error(f"Erreur inattendue : {e}")
 
     def get_camera_info_msg(self, intrinsics):
         camera_info_msg = CameraInfo()
         camera_info_msg.width = intrinsics.width
         camera_info_msg.height = intrinsics.height
-        camera_info_msg.k = [float(intrinsics.fx), 0.0, float(intrinsics.ppx), 0.0, float(intrinsics.fy), float(intrinsics.ppy), 0.0, 0.0, 1.0]
+        
+        # Matrice K (Intrinsèque)
+        camera_info_msg.k = [
+            float(intrinsics.fx), 0.0, float(intrinsics.ppx),
+            0.0, float(intrinsics.fy), float(intrinsics.ppy),
+            0.0, 0.0, 1.0
+        ]
+        
+        # Modèle de distorsion standard
         camera_info_msg.distortion_model = 'plumb_bob'
         camera_info_msg.d = list(intrinsics.coeffs)
-        camera_info_msg.p = [float(intrinsics.fx), 0.0, float(intrinsics.ppx), 0.0, 0.0, float(intrinsics.fy), float(intrinsics.ppy), 0.0, 0.0, 0.0, 1.0, 0.0]
+        
+        # Matrice P (Projection)
+        camera_info_msg.p = [
+            float(intrinsics.fx), 0.0, float(intrinsics.ppx), 0.0,
+            0.0, float(intrinsics.fy), float(intrinsics.ppy), 0.0,
+            0.0, 0.0, 1.0, 0.0
+        ]
+        
         return camera_info_msg
 
 def main(args=None):
