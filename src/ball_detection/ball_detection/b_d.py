@@ -18,20 +18,21 @@ class BallDetectorDebug(Node):
         # --- 1. CONFIGURATION ---
         package_share_directory = get_package_share_directory('ball_detection')
         
-        # Choisissez votre modèle (CPU ou EdgeTPU selon ce qui marche chez vous)
+        # Modèle (YOLOv5 Nano)
         model_filename = 'yolov5n-int8_edgetpu320.tflite' 
         self.model_path = os.path.join(package_share_directory, 'models', model_filename)
 
-        # SEUIL CRITIQUE : Si vous avez trop de faux positifs, AUGMENTEZ ceci (0.40 -> 0.60)
-        self.conf_threshold = 0.25
+        # SEUIL : Ajusté pour éviter les faux positifs
+        self.conf_threshold = 0.35 
         
+        # Dimensions d'entrée du modèle
         self.model_w = 320 
         self.model_h = 320
 
         # --- 2. INITIALISATION TFLITE ---
         self.get_logger().info(f"Chargement du modèle : {model_filename}")
         try:
-            # Tente de charger le délégué TPU
+            # Tente de charger le délégué TPU (Coral USB)
             delegate = tflite.load_delegate('libedgetpu.so.1')
             self.interpreter = tflite.Interpreter(
                 model_path=self.model_path,
@@ -39,7 +40,7 @@ class BallDetectorDebug(Node):
             )
             self.get_logger().info("✅ Mode CORAL activé.")
         except Exception:
-            self.get_logger().warn("⚠️ Coral introuvable, passage en mode CPU (lent).")
+            self.get_logger().warn("⚠️ Coral introuvable, passage en mode CPU.")
             self.interpreter = tflite.Interpreter(model_path=self.model_path)
 
         self.interpreter.allocate_tensors()
@@ -51,11 +52,9 @@ class BallDetectorDebug(Node):
         
         self.pub_ball = self.create_publisher(PointStamped, '/ball_3d', 10)
         self.pub_marker = self.create_publisher(Marker, '/ball_marker', 10)
-        
-        # --- NOUVEAU : Image de debug pour voir les carrés ---
         self.pub_debug_img = self.create_publisher(Image, '/ball_debug', 10)
 
-        # Subscribers
+        # Synchronization des topics (RGB + Depth + Info)
         self.sub_rgb = message_filters.Subscriber(self, Image, '/Realsense/Image/Color')
         self.sub_depth = message_filters.Subscriber(self, Image, '/Realsense/Image/Depth')
         self.sub_info = message_filters.Subscriber(self, CameraInfo, '/Realsense/CameraInfo')
@@ -69,41 +68,42 @@ class BallDetectorDebug(Node):
 
     def callback(self, rgb_msg, depth_msg, info_msg):
         try:
+            # Conversion ROS -> OpenCV
             cv_rgb = self.bridge.imgmsg_to_cv2(rgb_msg, "bgr8")
             cv_depth = self.bridge.imgmsg_to_cv2(depth_msg, "passthrough")
         except Exception as e:
+            self.get_logger().error(f"Erreur conversion image: {e}")
             return
 
         cam_h, cam_w = cv_rgb.shape[:2]
-        
-        # Copie pour le dessin
         debug_image = cv_rgb.copy()
 
-        # Préparation Inférence
+        # --- PRÉPARATION INFÉRENCE ---
         img_resized = cv2.resize(cv_rgb, (self.model_w, self.model_h))
         input_data = cv2.cvtColor(img_resized, cv2.COLOR_BGR2RGB)
         input_data = np.expand_dims(input_data, axis=0)
 
-        # Inférence
+        # --- INFÉRENCE ---
         self.interpreter.set_tensor(self.input_details[0]['index'], input_data)
         self.interpreter.invoke()
         output_data = self.interpreter.get_tensor(self.output_details[0]['index'])
 
         detections = output_data[0]
         
-        # On regarde tout ce qui dépasse 10% de confiance pour comprendre ce qui se passe
+        # Filtrage grossier pour l'analyse
         candidates = detections[detections[:, 4] > 0.10] 
 
         best_conf = 0
-        final_x, final_y, final_z = 0, 0, 0
+        final_cx, final_cy = 0, 0
+        final_w, final_h = 0, 0
         detected = False
 
+        # --- ANALYSE DES DÉTECTIONS ---
         for det in candidates:
             score = det[4]
-            # Coordonnées Modèle
             mx, my, mw, mh = det[0:4]
             
-            # Conversion vers Image Caméra
+            # Remise à l'échelle (Model -> Camera)
             scale_x = cam_w / self.model_w
             scale_y = cam_h / self.model_h
             cx = int(mx * scale_x)
@@ -111,59 +111,93 @@ class BallDetectorDebug(Node):
             w = int(mw * scale_x)
             h = int(mh * scale_y)
 
-            # --- DESSIN DE DEBUG ---
-            # Si c'est au dessus du seuil valide (VERT), sinon (ROUGE)
+            # Dessin Debug
+            top_left = (int(cx - w/2), int(cy - h/2))
+            bottom_right = (int(cx + w/2), int(cy + h/2))
+
             if score > self.conf_threshold:
+                # C'est une bonne détection
                 color = (0, 255, 0) # Vert
-                label = f"BALL: {score:.2f}"
+                label = f"{score:.2f}"
                 
-                # C'est notre meilleure détection ?
+                # On garde la meilleure balle (la plus confiante)
                 if score > best_conf:
                     best_conf = score
                     detected = True
                     final_cx, final_cy = cx, cy
+                    final_w, final_h = w, h
             else:
-                color = (0, 0, 255) # Rouge (rejeté mais détecté)
-                label = f"Ignored: {score:.2f}"
+                color = (0, 0, 255) # Rouge (rejeté)
+                label = f"X {score:.2f}"
 
-            # Dessiner le rectangle sur l'image de debug
-            top_left = (int(cx - w/2), int(cy - h/2))
-            bottom_right = (int(cx + w/2), int(cy + h/2))
             cv2.rectangle(debug_image, top_left, bottom_right, color, 2)
             cv2.putText(debug_image, label, (top_left[0], top_left[1]-10), 
                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
-        # Si on a trouvé une balle valide
+        # --- CALCUL 3D INTELLIGENT ---
         if detected:
-            # Calcul 3D (Median)
-            window = 5
-            x_min = max(0, final_cx - window)
-            x_max = min(cam_w, final_cx + window)
-            y_min = max(0, final_cy - window)
-            y_max = min(cam_h, final_cy + window)
-            
-            depth_crop = cv_depth[y_min:y_max, x_min:x_max]
-            valid_depths = depth_crop[depth_crop > 0]
+            # 1. Définir une zone d'intérêt (ROI) plus petite que la boite
+            # On prend 50% de la largeur/hauteur centrale pour éviter les bords (le mur)
+            roi_ratio = 0.50 
+            roi_w_half = int((final_w * roi_ratio) / 2)
+            roi_h_half = int((final_h * roi_ratio) / 2)
 
-            if len(valid_depths) > 0:
-                z_mm = np.median(valid_depths)
+            # Coordonnées du crop (sécurisées pour ne pas sortir de l'image)
+            x_min = max(0, final_cx - roi_w_half)
+            x_max = min(cam_w, final_cx + roi_w_half)
+            y_min = max(0, final_cy - roi_h_half)
+            y_max = min(cam_h, final_cy + roi_h_half)
+            
+            # On découpe la profondeur dans cette zone
+            depth_crop = cv_depth[y_min:y_max, x_min:x_max]
+            
+            # --- CŒUR DU PROBLÈME : FILTRAGE ROBUSTE ---
+            # On ne garde que les pixels > 0 (valides) et < 3.5m (on ignore le mur lointain)
+            valid_depths = depth_crop[(depth_crop > 0) & (depth_crop < 3500)]
+
+            if len(valid_depths) > 10:
+                # TRI : La balle est l'objet le plus proche dans la boite.
+                # On trie les valeurs : [plus_proche, ..., plus_loin]
+                valid_depths = np.sort(valid_depths)
+                
+                n_pixels = len(valid_depths)
+                
+                # On ignore les 5% les plus proches (bruit "poivre" ou erreur capteur)
+                # On s'arrête à 20% (pour être sûr de taper la balle et pas le bord qui fuit vers le mur)
+                idx_start = int(n_pixels * 0.05)
+                idx_end = int(n_pixels * 0.20)
+                
+                # Sécurité si peu de pixels
+                if idx_end <= idx_start:
+                    idx_end = idx_start + 1
+
+                # Moyenne sur les pixels les plus proches (le "devant" de la balle)
+                z_mm = np.mean(valid_depths[idx_start:idx_end])
                 z_m = z_mm * 0.001
                 
+                # Projection 2D -> 3D (Modèle Pinhole)
                 fx = info_msg.k[0]
                 fy = info_msg.k[4]
                 ppx = info_msg.k[2]
                 ppy = info_msg.k[5]
                 
+                # On utilise le centre de la boite (final_cx) pour le X/Y
                 x_m = (final_cx - ppx) * z_m / fx
                 y_m = (final_cy - ppy) * z_m / fy
 
-                # Publication
+                # Publication et Log
                 self.publish_result(rgb_msg.header, x_m, y_m, z_m)
                 
-                # Log dans le terminal pour vous rassurer
-                self.get_logger().info(f"⚽ Balle détectée ! Confiance: {best_conf:.2f} | Dist: {z_m:.2f}m")
+                # Affichage sur l'image de debug
+                label_dist = f"{z_m:.2f}m"
+                cv2.putText(debug_image, label_dist, (final_cx, final_cy), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+                
+                self.get_logger().info(f"⚽ Balle OK | Conf: {best_conf:.2f} | Z: {z_m:.3f}m | (Pixels utilisés: {idx_end-idx_start})")
+            else:
+                self.get_logger().warn("Balle vue mais pas de profondeur valide (trop près ou reflets ?)")
 
-        # TOUJOURS publier l'image de debug, même si rien n'est détecté
+        # Publication Image Debug
         try:
             debug_msg = self.bridge.cv2_to_imgmsg(debug_image, "bgr8")
             debug_msg.header = rgb_msg.header
@@ -172,12 +206,13 @@ class BallDetectorDebug(Node):
             pass
 
     def publish_result(self, header, x, y, z):
+        # Point 3D
         pt = PointStamped()
         pt.header = header
         pt.point.x, pt.point.y, pt.point.z = float(x), float(y), float(z)
         self.pub_ball.publish(pt)
         
-        # Marker (pour Rviz)
+        # Marker pour RViz
         marker = Marker()
         marker.header = header
         marker.ns = "ball"
@@ -192,7 +227,7 @@ class BallDetectorDebug(Node):
         marker.scale.y = 0.2
         marker.scale.z = 0.2
         marker.color.a = 1.0
-        marker.color.r = 0.0
+        marker.color.r = 1.0 # Jaune
         marker.color.g = 1.0
         marker.color.b = 0.0
         self.pub_marker.publish(marker)
@@ -200,9 +235,13 @@ class BallDetectorDebug(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = BallDetectorDebug()
-    rclpy.spin(node)
-    node.destroy_node()
-    rclpy.shutdown()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
 
 if __name__ == '__main__':
     main()

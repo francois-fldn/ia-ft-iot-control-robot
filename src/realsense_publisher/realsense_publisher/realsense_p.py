@@ -15,52 +15,64 @@ class PointCloudPublisher(Node):
         self.color_image_publisher_ = self.create_publisher(Image, 'Realsense/Image/Color', 10)
         self.camera_info_publisher_ = self.create_publisher(CameraInfo, 'Realsense/CameraInfo', 10)
         
-        # Timer à 15Hz (suffisant pour le Pi et plus stable que 30Hz)
-        # Si vous voulez 30Hz, mettez 0.033
+        # Timer à 15Hz (0.066s) -> Compromis idéal pour Pi 4 + Traitement Python
         self.timer = self.create_timer(0.066, self.timer_callback)
         
         # --- 2. CONFIGURATION REALSENSE ---
         self.pipe = rs.pipeline()
         self.config = rs.config()
         
-        # On garde votre résolution 424x240 (Très bien pour le Pi)
-        self.config.enable_stream(rs.stream.depth, 424, 240, rs.format.z16, 30)
-        self.config.enable_stream(rs.stream.color, 424, 240, rs.format.bgr8, 30)
+        # Résolution 424x240 (Parfait pour le Pi4, réduit la charge CPU)
+        self.config.enable_stream(rs.stream.depth, 424, 240, rs.format.z16, 15)
+        self.config.enable_stream(rs.stream.color, 424, 240, rs.format.bgr8, 15)
 
-        # Objet d'alignement : Aligner la Profondeur VERS la Couleur
+        # --- NOUVEAU : FILTRES ---
+        # Filtre "Hole Filling" : Indispensable pour que la balle soit "pleine" et pas un anneau
+        self.hole_filling = rs.hole_filling_filter(1) # 1 = ffill (bouchage modéré)
+
+        # Alignement : Profondeur VERS Couleur
         self.align = rs.align(rs.stream.color)
 
         # Démarrage du flux
         profile = self.pipe.start(self.config)
         
-        # --- 3. CORRECTION MAJEURE : INTRINSÈQUES ---
-        # Puisqu'on aligne sur la couleur, on doit récupérer les infos de la lentille COULEUR
+        # --- 3. REGLAGES HARDWARE AVANCÉS (CRITIQUE POUR LA BALLE) ---
+        depth_sensor = profile.get_device().first_depth_sensor()
+        
+        if depth_sensor.supports(rs.option.visual_preset):
+            # Preset 4 = "High Density". Privilégie le remplissage des objets proches.
+            depth_sensor.set_option(rs.option.visual_preset, 4)
+            self.get_logger().info("✅ Preset 'High Density' activé.")
+            
+        if depth_sensor.supports(rs.option.laser_power):
+            # Laser à fond (360) pour bien voir les objets sombres/mats
+            depth_sensor.set_option(rs.option.laser_power, 360.0)
+            self.get_logger().info("✅ Laser Power set to Max (360mW).")
+
+        # --- 4. INTRINSÈQUES (Alignées sur Color) ---
         stream_profile = profile.get_stream(rs.stream.color) 
         self.intrinsics = stream_profile.as_video_stream_profile().get_intrinsics()
 
-        # --- 4. STABILISATION (Anti-Crash USB) ---
+        # --- 5. REGLAGES RGB (Anti-Crash USB & Luminosité) ---
         try:
-            # On récupère le capteur RGB
             color_sensor = profile.get_device().query_sensors()[1]
-            
-            # Désactivation de l'exposition auto pour éviter la saturation USB
-            color_sensor.set_option(rs.option.enable_auto_exposure, 0) # 0 = Off
-            # Réglage manuel (Ajustez 150.0 si l'image est trop sombre/claire)
+            # Désactivation exposition auto pour stabilité USB + éviter le flou de mouvement
+            color_sensor.set_option(rs.option.enable_auto_exposure, 0) 
+            # Exposition manuelle (150 est standard, baissez à 100 si flou, montez à 300 si trop noir)
             color_sensor.set_option(rs.option.exposure, 150.0) 
-            
-            self.get_logger().info("✅ Auto-Exposure désactivé pour stabilité USB.")
+            self.get_logger().info("✅ Auto-Exposure RGB désactivé.")
         except Exception as e:
-            self.get_logger().warn(f"⚠️ Impossible de configurer l'exposition : {e}")
+            self.get_logger().warn(f"⚠️ Warning Exposure: {e}")
 
         self.bridge = CvBridge()
-        self.get_logger().info("Publisher RealSense Démarré (Mode Aligné).")
+        self.get_logger().info("Publisher RealSense Démarré avec filtres Balle.")
 
     def timer_callback(self):
         try:
             # 1. Attente des frames
-            frames = self.pipe.wait_for_frames()
+            frames = self.pipe.wait_for_frames(timeout_ms=5000)
         
-            # 2. ALIGNEMENT (Indispensable)
+            # 2. ALIGNEMENT
             aligned_frames = self.align.process(frames)
             
             depth_frame = aligned_frames.get_depth_frame()
@@ -69,21 +81,24 @@ class PointCloudPublisher(Node):
             if not depth_frame or not color_frame:
                 return
             
-            # 3. Conversion Numpy
+            # --- 3. APPLICATION DU FILTRE HOLE FILLING ---
+            # On bouche les trous APRES l'alignement (plus simple à gérer sur Pi)
+            depth_frame = self.hole_filling.process(depth_frame)
+
+            # 4. Conversion Numpy
             depth_image = np.asanyarray(depth_frame.get_data())
             color_image = np.asanyarray(color_frame.get_data())
 
-            # 4. Préparation du Header (Timestamp unique pour tout le monde)
+            # 5. Header (Timestamp synchronisé)
             header = Header()
-            header.frame_id = "camera_color_optical_frame" # Frame standard pour RGB
+            header.frame_id = "camera_color_optical_frame"
             header.stamp = self.get_clock().now().to_msg()
 
-            # 5. Conversion ROS
-            # CORRECTION : Encoding bgr8 (et non rgb8) pour OpenCV
+            # 6. Conversion ROS
             ros_color_image_msg = self.bridge.cv2_to_imgmsg(color_image, encoding="bgr8")
             ros_depth_image_msg = self.bridge.cv2_to_imgmsg(depth_image, encoding="passthrough")
             
-            # 6. Camera Info
+            # 7. Camera Info
             camera_info_msg = self.get_camera_info_msg(self.intrinsics)
 
             # Assignation des headers
@@ -91,28 +106,29 @@ class PointCloudPublisher(Node):
             ros_color_image_msg.header = header
             ros_depth_image_msg.header = header
 
-            # 7. Publication
+            # 8. Publication
             self.camera_info_publisher_.publish(camera_info_msg)
             self.color_image_publisher_.publish(ros_color_image_msg)
             self.depth_image_publisher_.publish(ros_depth_image_msg)
 
         except RuntimeError as e:
-            # On attrape les erreurs de timeout sans crasher tout le node
-            self.get_logger().warn(f"Erreur Frame RealSense : {e}")
+            self.get_logger().warn(f"Frame Timeout/Error: {e}")
+        except Exception as e:
+            self.get_logger().error(f"Erreur inattendue: {e}")
 
     def get_camera_info_msg(self, intrinsics):
         camera_info_msg = CameraInfo()
         camera_info_msg.width = intrinsics.width
         camera_info_msg.height = intrinsics.height
 
-        # Matrice Intrinsèque K [fx, 0, cx, 0, fy, cy, 0, 0, 1]
+        # K: Matrice Intrinsèque
         camera_info_msg.k = [
             float(intrinsics.fx), 0.0, float(intrinsics.ppx),
             0.0, float(intrinsics.fy), float(intrinsics.ppy),
             0.0, 0.0, 1.0
         ]
         
-        # Modèle de distorsion
+        # Distortion
         distortion_model_map = {
             rs.distortion.none: 'none',
             rs.distortion.brown_conrady: 'plumb_bob',
@@ -121,11 +137,9 @@ class PointCloudPublisher(Node):
             rs.distortion.kannala_brandt4: 'fisheye',
         }
         camera_info_msg.distortion_model = distortion_model_map.get(intrinsics.model, 'plumb_bob')
-        
-        # Coefficients D
         camera_info_msg.d = list(intrinsics.coeffs)
         
-        # Matrice de Projection P (identique à K pour une caméra simple sans rectification stéréo complexe)
+        # P: Matrice Projection
         camera_info_msg.p = [
             float(intrinsics.fx), 0.0, float(intrinsics.ppx), 0.0,
             0.0, float(intrinsics.fy), float(intrinsics.ppy), 0.0,
@@ -133,7 +147,6 @@ class PointCloudPublisher(Node):
         ]
         
         return camera_info_msg
-
 
 def main(args=None):
     rclpy.init(args=args)
