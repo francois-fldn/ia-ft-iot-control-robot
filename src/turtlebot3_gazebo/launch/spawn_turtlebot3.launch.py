@@ -35,8 +35,8 @@ def generate_launch_description():
     )
 
     # Launch configuration variables specific to simulation
-    x_pose = LaunchConfiguration('x_pose', default='0.0')
-    y_pose = LaunchConfiguration('y_pose', default='0.0')
+    x_pose = LaunchConfiguration('x_pose', default='2.0')
+    y_pose = LaunchConfiguration('y_pose', default='0.5')
 
     # Declare the launch arguments
     declare_x_position_cmd = DeclareLaunchArgument(
