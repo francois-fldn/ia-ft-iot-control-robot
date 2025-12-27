@@ -100,3 +100,10 @@
   ros_type_name: "sensor_msgs/msg/CameraInfo"
   gz_type_name: "gz.msgs.CameraInfo"
   direction: GZ_TO_ROS
+
+# Bridge pour envoyer l'image de debug de ROS vers Gazebo
+- ros_topic_name: "ball_debug"
+  gz_topic_name: "ball_debug_sim"
+  ros_type_name: "sensor_msgs/msg/Image"
+  gz_type_name: "gz.msgs.Image"
+  direction: ROS_TO_GZ

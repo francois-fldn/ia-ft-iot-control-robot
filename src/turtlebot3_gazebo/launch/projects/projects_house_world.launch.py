@@ -78,7 +78,8 @@ def generate_launch_description():
         executable='ball_detector',   
         name='ball_detector_pointcloud',
         output='screen',
-        parameters=[{'use_sim_time': use_sim_time}] 
+        parameters=[{'use_sim_time': use_sim_time}],
+        arguments=[]
     )
 
     rndm_wndrr = Node(
