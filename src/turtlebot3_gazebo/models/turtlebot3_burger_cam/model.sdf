@@ -343,7 +343,7 @@
 
       <sensor name='rgb_camera' type='camera'>
           <pose>0 0 0 0 0 0</pose>
-          <update_rate>30</update_rate>
+          <update_rate>6</update_rate>
           <always_on>1</always_on>
           <visualize>true</visualize>
           <topic>rgb_camera/image</topic>
@@ -363,7 +363,7 @@
       </sensor>
       <sensor name='depth_camera' type='depth_camera'>     
           <pose>0 0 0 0 0 0</pose>
-          <update_rate>30</update_rate>
+          <update_rate>6</update_rate>
           <always_on>1</always_on>
           <visualize>true</visualize>
           <topic>depth_camera/image</topic>    

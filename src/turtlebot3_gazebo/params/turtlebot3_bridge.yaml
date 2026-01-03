@@ -46,59 +46,30 @@
   gz_type_name: "gz.msgs.LaserScan"
   direction: GZ_TO_ROS
 
-# gz topic published by Sensors plugin (Camera)
-- ros_topic_name: "camera/camera_info"
-  gz_topic_name: "camera/camera_info"
-  ros_type_name: "sensor_msgs/msg/CameraInfo"
-  gz_type_name: "gz.msgs.CameraInfo"
-  direction: GZ_TO_ROS
-  
-# gz topic published by Sensors plugin (Camera)
+# Caméra RGB (Standard)
 - ros_topic_name: "rgb_camera/image"
   gz_topic_name: "rgb_camera/image"
   ros_type_name: "sensor_msgs/msg/Image"
   gz_type_name: "gz.msgs.Image"
   direction: GZ_TO_ROS
 
-# gz topic published by Sensors plugin (Camera)
-- ros_topic_name: "depth_camera/image"
-  gz_topic_name: "depth_camera/image"
-  ros_type_name: "sensor_msgs/msg/Image"
-  gz_type_name: "gz.msgs.Image"
-  direction: GZ_TO_ROS
-  
-- ros_topic_name: "depth_camera/points"
-  gz_topic_name: "depth_camera/image/points"
-  ros_type_name: "sensor_msgs/msg/PointCloud2"
-  gz_type_name: "gz.msgs.PointCloudPacked"
-  direction: GZ_TO_ROS
-
-# Bridge pour l'image Couleur (Color)
-- ros_topic_name: "/Realsense/Image/Color"
-  gz_topic_name: "rgb_camera/image"
-  ros_type_name: "sensor_msgs/msg/Image"
-  gz_type_name: "gz.msgs.Image"
-  direction: GZ_TO_ROS
-
-# Bridge pour l'image de Profondeur (Depth)
-- ros_topic_name: "/Realsense/Image/Depth"
-  gz_topic_name: "depth_camera/image"
-  ros_type_name: "sensor_msgs/msg/Image"
-  gz_type_name: "gz.msgs.Image"
-  direction: GZ_TO_ROS
-
-# Bridge pour le Nuage de Points (PointCloud)
-- ros_topic_name: "/Realsense/PointCloud"
-  gz_topic_name: "depth_camera/image/points"
-  ros_type_name: "sensor_msgs/msg/PointCloud2"
-  gz_type_name: "gz.msgs.PointCloudPacked"
-  direction: GZ_TO_ROS
-
-# Bridge pour les infos caméra (CameraInfo)
-- ros_topic_name: "/Realsense/CameraInfo"
-  gz_topic_name: "camera/camera_info"
+- ros_topic_name: "rgb_camera/camera_info"
+  gz_topic_name: "/rgb_camera/camera_info"
   ros_type_name: "sensor_msgs/msg/CameraInfo"
   gz_type_name: "gz.msgs.CameraInfo"
+  direction: GZ_TO_ROS
+  
+- ros_topic_name: "depth_camera/image"
+  gz_topic_name: "/depth_camera/image"
+  ros_type_name: "sensor_msgs/msg/Image"
+  gz_type_name: "gz.msgs.Image"
+  direction: GZ_TO_ROS
+
+# Nuage de points
+- ros_topic_name: "depth_camera/points"
+  gz_topic_name: "/depth_camera/image/points"
+  ros_type_name: "sensor_msgs/msg/PointCloud2"
+  gz_type_name: "gz.msgs.PointCloudPacked"
   direction: GZ_TO_ROS
 
 # Bridge pour envoyer l'image de debug de ROS vers Gazebo

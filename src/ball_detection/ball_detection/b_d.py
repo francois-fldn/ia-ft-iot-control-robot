@@ -1,185 +1,173 @@
 import rclpy
 from rclpy.node import Node
-from sensor_msgs.msg import Image, CameraInfo
+from sensor_msgs.msg import Image, CameraInfo  # <-- Ajout de CameraInfo
 from geometry_msgs.msg import PointStamped
 from visualization_msgs.msg import Marker
-from cv_bridge import CvBridge
-import message_filters
+from cv_bridge import CvBridge, CvBridgeError
 import cv2
 import numpy as np
 import tflite_runtime.interpreter as tflite
 from ament_index_python.packages import get_package_share_directory
 import os
-# IMPORT INDISPENSABLE POUR GAZEBO
-from rclpy.qos import qos_profile_sensor_data
+import math
 
-class BallDetectorPointCloud(Node):
+class BallDetectorHybrid(Node):
     def __init__(self):
-        super().__init__('ball_detector_pointcloud')
+        super().__init__('ball_detector_hybrid')
 
-        # --- CONFIGURATION IA ---
-        package_share_directory = get_package_share_directory('ball_detection')
-        model_filename = 'yolov5n-int8_320.tflite' # VERIFIE CE NOM
-        self.model_path = os.path.join(package_share_directory, 'models', model_filename)
-
-        self.conf_threshold = 0.25 
-        self.model_w = 320 
-        self.model_h = 320
-        self.ball_radius = 0.035
-        self.radius_tolerance = 0.02
-        self.ransac_iterations = 80
-        self.min_inliers = 10 # Réduit un peu pour faciliter la detection
-
-        # IA Init (CPU FORCE)
+        # --- IA SETUP ---
         try:
+            package_share_directory = get_package_share_directory('ball_detection')
+            model_filename = 'yolov5n-int8_320.tflite' 
+            self.model_path = os.path.join(package_share_directory, 'models', model_filename)
             self.interpreter = tflite.Interpreter(model_path=self.model_path)
             self.interpreter.allocate_tensors()
             self.input_details = self.interpreter.get_input_details()
             self.output_details = self.interpreter.get_output_details()
-            self.get_logger().info("💻 Mode CPU activé.")
+            self.get_logger().info(" IA Chargée (Mode CameraInfo).")
         except Exception as e:
-            self.get_logger().error(f"❌ Erreur Init IA: {e}")
+            self.get_logger().error(f" Erreur Init IA: {e}")
             raise e
+
+        self.conf_threshold = 0.25 
+        self.model_w = 320; self.model_h = 320
+        self.latest_depth_img = None 
+        
+        # Stockage des infos caméra (fx, fy, cx, cy)
+        self.camera_intrinsics = None 
 
         # --- ROS SETUP ---
         self.bridge = CvBridge()
-        self.pub_ball = self.create_publisher(PointStamped, '/ball_3d', 10)
-        self.pub_marker = self.create_publisher(Marker, '/ball_marker', 10)
-        self.pub_debug_img = self.create_publisher(Image, '/ball_debug', 10)
+        self.pub_ball = self.create_publisher(PointStamped, 'ball_3d', 10)
+        self.pub_marker = self.create_publisher(Marker, 'ball_marker', 10)
+        self.pub_debug_img = self.create_publisher(Image, 'ball_debug', 10)
 
-        # ⚠️ QOS PROFILE = INDISPENSABLE POUR LA SIMULATION
-        self.sub_rgb = message_filters.Subscriber(
-            self, Image, '/Realsense/Image/Color', qos_profile=qos_profile_sensor_data)
-        self.sub_depth = message_filters.Subscriber(
-            self, Image, '/Realsense/Image/Depth', qos_profile=qos_profile_sensor_data)
-        self.sub_info = message_filters.Subscriber(
-            self, CameraInfo, '/Realsense/CameraInfo', qos_profile=qos_profile_sensor_data)
+        # Subscribers
+        self.sub_rgb = self.create_subscription(Image, 'rgb_camera/image', self.callback_rgb, 10)
+        self.sub_depth = self.create_subscription(Image, 'depth_camera/image', self.callback_depth, 10)
+        
+        # NOUVEAU : On écoute les caractéristiques de la caméra
+        self.sub_info = self.create_subscription(CameraInfo, 'rgb_camera/camera_info', self.callback_info, 10)
+        
+        self.get_logger().info(" Prêt : Utilisation dynamique de CameraInfo.")
 
-        # ⚠️ SLOP = 10.0 (TOLÉRANCE MAXIMALE AU LAG)
-        self.ts = message_filters.ApproximateTimeSynchronizer(
-            [self.sub_rgb, self.sub_depth, self.sub_info], 
-            queue_size=100, 
-            slop=10.0,  # Accepte jusqu'à 10s de décalage
-            allow_headerless=True
-        )
-        self.ts.registerCallback(self.callback)
-        self.get_logger().info("✅ Algorithme Prêt (Lag-Resistant).")
+    def callback_info(self, msg):
+        # On ne stocke ça qu'une fois (ou à chaque update), c'est très léger
+        # La matrice K contient : [fx, 0, cx, 0, fy, cy, 0, 0, 1]
+        if self.camera_intrinsics is None:
+            self.get_logger().info(f" CameraInfo reçu : {msg.width}x{msg.height}")
+        self.camera_intrinsics = msg
 
-    def callback(self, rgb_msg, depth_msg, info_msg):
-        # Debug simple pour savoir si on reçoit des données
-        # self.get_logger().info("📥 Images reçues !", throttle_duration_sec=2.0)
-
+    def callback_depth(self, msg):
         try:
-            cv_rgb = self.bridge.imgmsg_to_cv2(rgb_msg, "bgr8")
-            cv_depth = self.bridge.imgmsg_to_cv2(depth_msg, "passthrough")
-        except Exception as e:
-            self.get_logger().error(f"❌ Erreur CV Bridge: {e}")
-            return
+            self.latest_depth_img = self.bridge.imgmsg_to_cv2(msg, desired_encoding="passthrough")
+        except CvBridgeError: pass
 
-        cam_h, cam_w = cv_rgb.shape[:2]
+    def callback_rgb(self, rgb_msg):
+        try: cv_rgb = self.bridge.imgmsg_to_cv2(rgb_msg, "bgr8")
+        except: return
+
         debug_image = cv_rgb.copy()
+        cam_h, cam_w = cv_rgb.shape[:2]
 
-        # IA INFERENCE
+        # --- IA Inference ---
         img_resized = cv2.resize(cv_rgb, (self.model_w, self.model_h))
         input_data = cv2.cvtColor(img_resized, cv2.COLOR_BGR2RGB)
         input_data = np.expand_dims(input_data, axis=0)
+        
+        input_d = self.input_details[0]
+        if input_d['dtype'] == np.int8 or input_d['dtype'] == np.uint8:
+            scale, zero = input_d['quantization']
+            input_data = (input_data / 255.0 / scale + zero).astype(input_d['dtype'])
+        else:
+            input_data = (input_data.astype(np.float32) / 255.0)
 
         self.interpreter.set_tensor(self.input_details[0]['index'], input_data)
         self.interpreter.invoke()
-        detections = self.interpreter.get_tensor(self.output_details[0]['index'])[0]
-        
+        output_d = self.output_details[0]
+        raw = self.interpreter.get_tensor(output_d['index'])[0]
+
+        if output_d['dtype'] == np.int8 or output_d['dtype'] == np.uint8:
+            scale, zero = output_d['quantization']
+            detections = (raw.astype(np.float32) - zero) * scale
+        else: detections = raw
+
         candidates = detections[detections[:, 4] > self.conf_threshold]
 
-        fx = info_msg.k[0]
-        fy = info_msg.k[4]
-        cx_cam = info_msg.k[2]
-        cy_cam = info_msg.k[5]
-
-        final_ball_3d = None
-
         for det in candidates:
-            # Pour simplifier le debug, on prend le premier candidat valide
-            mx, my, mw, mh = det[0:4]
-            confidence = det[4]
+            cx_norm, cy_norm, w_norm, h_norm = det[0], det[1], det[2], det[3]
             
-            scale_x = cam_w / self.model_w
-            scale_y = cam_h / self.model_h
-            cx_box = int(mx * scale_x)
-            cy_box = int(my * scale_y)
-            
-            # Simple lecture de la profondeur au centre de la bbox
-            # (Plus robuste que le nuage de points complet si ça lague)
-            if 0 <= cy_box < cam_h and 0 <= cx_box < cam_w:
-                z_mm = cv_depth[cy_box, cx_box]
-                
-                # Si le pixel central est vide (0), on cherche autour
-                if z_mm == 0:
-                     # Petite zone 5x5 autour du centre
-                     roi = cv_depth[max(0, cy_box-5):min(cam_h, cy_box+5), 
-                                    max(0, cx_box-5):min(cam_w, cx_box+5)]
-                     if roi.size > 0:
-                         z_mm = np.max(roi) # On prend le max pour éviter les trous
+            if w_norm > 1.0: 
+                scale_x = cam_w/320.0; scale_y = cam_h/320.0
+                cx = int(cx_norm*scale_x); cy = int(cy_norm*scale_y)
+                w = int(w_norm*scale_x); h = int(h_norm*scale_y)
+            else:
+                cx = int(cx_norm*cam_w); cy = int(cy_norm*cam_h)
+                w = int(w_norm*cam_w); h = int(h_norm*cam_h)
 
-                if 0 < z_mm < 5000: # Max 5m
-                    z_m = z_mm / 1000.0
-                    x_m = (cx_box - cx_cam) * z_m / fx
-                    y_m = (cy_box - cy_cam) * z_m / fy
+            x_tl = int(cx - w/2); y_tl = int(cy - h/2)
+            cv2.rectangle(debug_image, (x_tl, y_tl), (x_tl+w, y_tl+h), (0, 255, 0), 2)
+
+            if self.latest_depth_img is not None:
+                d_h, d_w = self.latest_depth_img.shape[:2]
+                u_depth = int(cx * (d_w / cam_w))
+                v_depth = int(cy * (d_h / cam_h))
+
+                if 0 <= u_depth < d_w and 0 <= v_depth < d_h:
+                    dist_z = self.latest_depth_img[v_depth, u_depth]
                     
-                    final_ball_3d = (x_m, y_m, z_m)
-                    
-                    # Dessin
-                    cv2.circle(debug_image, (cx_box, cy_box), 10, (0, 255, 0), 2)
-                    cv2.putText(debug_image, f"{z_m:.2f}m", (cx_box, cy_box-10), 
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-                    break # On arrête à la première balle trouvée
+                    if 0.1 < dist_z < 10.0 and not math.isnan(dist_z):
+                        
+                        # --- UTILISATION DE CAMERA INFO ---
+                        if self.camera_intrinsics is not None:
+                            # K = [fx, 0, cx, 0, fy, cy, 0, 0, 1]
+                            fx = self.camera_intrinsics.k[0]
+                            cx_opt = self.camera_intrinsics.k[2] # Centre optique X
+                            fy = self.camera_intrinsics.k[4]
+                            cy_opt = self.camera_intrinsics.k[5] # Centre optique Y
+                        
+                        
+                        # Formule Optique : X = (pixel - centre) * Z / focale
+                        raw_x = (u_depth - cx_opt) * dist_z / fx 
+                        raw_y = (v_depth - cy_opt) * dist_z / fy 
+                        raw_z = dist_z                           
 
-        if final_ball_3d:
-            gx, gy, gz = final_ball_3d
-            self.publish_result(rgb_msg.header, gx, gy, gz)
-        
-        # Publication Image Debug
-        try:
-            debug_msg = self.bridge.cv2_to_imgmsg(debug_image, "bgr8")
-            debug_msg.header = rgb_msg.header
-            self.pub_debug_img.publish(debug_msg)
-        except Exception:
-            pass
+                        label = f"Z:{raw_z:.2f}m"
+                        cv2.putText(debug_image, label, (x_tl, y_tl-10), 
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+                        
+                        self.publish_result(raw_x, raw_y, raw_z)
+                        break 
 
-    def publish_result(self, header, x, y, z):
+        try: self.pub_debug_img.publish(self.bridge.cv2_to_imgmsg(debug_image, "bgr8"))
+        except: pass
+
+    def publish_result(self, cam_x, cam_y, cam_z):
         pt = PointStamped()
-        pt.header = header
-        pt.point.x, pt.point.y, pt.point.z = float(x), float(y), float(z)
+        pt.header.frame_id = "base_footprint" 
+        pt.header.stamp = self.get_clock().now().to_msg()
+        
+        # --- INVERSION DES AXES (Manuelle) ---
+        pt.point.x = float(cam_z)       # Profondeur -> Devant
+        pt.point.y = -float(cam_x)      # Droite -> Gauche
+        pt.point.z = float(cam_y)       # Bas -> Haut (Attention au signe ici)
+        
         self.pub_ball.publish(pt)
         
         marker = Marker()
-        marker.header = header
-        marker.ns = "ball_3d"
-        marker.id = 0
-        marker.type = Marker.SPHERE
-        marker.action = Marker.ADD
-        marker.pose.position.x = x
-        marker.pose.position.y = y
-        marker.pose.position.z = z
-        marker.pose.orientation.w = 1.0
-        marker.scale.x = 0.1
-        marker.scale.y = 0.1
-        marker.scale.z = 0.1
-        marker.color.a = 1.0
-        marker.color.r = 0.0
-        marker.color.g = 1.0
-        marker.color.b = 0.0
+        marker.header = pt.header
+        marker.ns = "ball_visual"; marker.id = 0; marker.type = Marker.SPHERE; marker.action = Marker.ADD
+        marker.pose.position = pt.point
+        marker.scale.x = 0.1; marker.scale.y = 0.1; marker.scale.z = 0.1
+        marker.color.a = 1.0; marker.color.r = 1.0; marker.color.g = 1.0; marker.color.b = 0.0
         self.pub_marker.publish(marker)
 
 def main(args=None):
     rclpy.init(args=args)
-    node = BallDetectorPointCloud()
-    try:
-        rclpy.spin(node)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        node.destroy_node()
-        rclpy.shutdown()
+    node = BallDetectorHybrid()
+    try: rclpy.spin(node)
+    except KeyboardInterrupt: pass
+    finally: node.destroy_node(); rclpy.shutdown()
 
 if __name__ == '__main__':
     main()
