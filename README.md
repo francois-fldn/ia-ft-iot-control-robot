@@ -11,9 +11,27 @@ puis faire
 
 Dans ros2_packages/tests c'est juste moi qui joue avec la lib pour comprendre quoi faire avant de le mettre en package ros
 
+## lancer la simu
 
-## setup
+faire
+```
+export PROJECT_MODEL=turtlebot3_burger_d435i
+colcon build
+source install/setup.bash
+```
+pour setup le projet
 
-lancer le fichier setup.sh
-puis faire make lance la simulation
-position de base du robot : X:2 Y:0.5 Z:0 R:0 P:0 Y:-3.1
+puis
+```
+ros2 launch turtlebot3_gazebo projects_house_world.launch.py
+```
+qui lance :
+- gazebo sur un modele de maison
+- rviz
+- le modele IA
+
+puis il faut lancer, dans 2 autres terminaux 
+```
+ros2 run turtlebot3_wanderer explorator
+ros2 run coordinator coordinator
+```
