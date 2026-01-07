@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
 
-package_name = 'turtlebot3_wanderer'
+package_name = 'coordinator'
 
 setup(
     name=package_name,
@@ -24,7 +24,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
-        		'explorator = turtlebot3_wanderer.wanderer:main',
+            'coordinator = coordinator.coordo:main',
         ],
     },
 )

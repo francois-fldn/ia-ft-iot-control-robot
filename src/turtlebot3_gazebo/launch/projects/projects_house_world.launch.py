@@ -82,14 +82,14 @@ def generate_launch_description():
         arguments=[]
     )
 
-    rndm_wndrr = Node(
-        package='turtlebot3_wanderer',
-        executable='random_wanderer',
-        name='turtlebot3_wanderer',
-        output='screen',
-        parameters=[{'use_sim_time': use_sim_time}],
-        arguments=[]
-    )
+    # rndm_wndrr = Node(
+    #     package='turtlebot3_wanderer',
+    #     executable='random_wanderer',
+    #     name='turtlebot3_wanderer',
+    #     output='screen',
+    #     parameters=[{'use_sim_time': use_sim_time}],
+    #     arguments=[]
+    # )
 
     ld = LaunchDescription()
 
@@ -100,7 +100,7 @@ def generate_launch_description():
     ld.add_action(robot_state_publisher_cmd)
     ld.add_action(spawn_turtlebot_cmd)
     ld.add_action(rviz_cmd)
-    ld.add_action(rndm_wndrr)
+    # ld.add_action(rndm_wndrr)
     ld.add_action(ball_detector_cmd)
 
     # print(get_package_share_directory('turtlebot3_gazebo'))
