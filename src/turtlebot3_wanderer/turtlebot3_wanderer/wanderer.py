@@ -37,7 +37,7 @@ class SearchBallBehavior(Node):
     def state_callback(self,msg):
         prev_state = self.state
         self.state = msg.data
-        if (prev_state != self.state): print(f'[INFO] {datetime.now()} Reçu état {self.state_to_str(self.state)}')
+        if (prev_state != self.state): print(f'[EXPLORATOR] [INFO] Reçu état {self.state_to_str(self.state)}')
 
     def ball_callback(self,msg):
         self.ball_position = (msg.point.x, msg.point.y, msg.point.z)
@@ -91,7 +91,7 @@ class SearchBallBehavior(Node):
 
             
 
-        if prev_log != self.log_state : print(f'[INFO] Applique la vitesse x = {msg.linear.x}, z = {msg.angular.z}')
+        if prev_log != self.log_state : print(f'[EXPLORATOR] [INFO] Applique la vitesse x = {msg.linear.x}, z = {msg.angular.z}')
         self.cmd_publisher.publish(msg)
 
 def main():

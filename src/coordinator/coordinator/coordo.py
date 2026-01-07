@@ -20,7 +20,7 @@ class Coordo(Node):
         self.i = 0
         self.start_timer = datetime.now()
         self.state = STATE_ROTATE
-        print(f'[INFO] {datetime.now()} : Démarrage avec STATE_ROTATE')
+        print(f'[ORCHESTRATOR] [INFO] Démarrage avec STATE_ROTATE')
         msg = UInt8()
         msg.data = self.state
         self.state_publisher.publish(msg)
@@ -29,7 +29,7 @@ class Coordo(Node):
         prev_state = self.state
         self.state = STATE_LOCK_IN
         
-        if prev_state != self.state : print(f'[INFO] {datetime.now()} : Changement d\'état STATE_LOCK_IN')
+        if prev_state != self.state : print(f'[ORCHESTRATOR] [INFO] Changement d\'état STATE_LOCK_IN')
         
         msg_state = UInt8()
         msg_state.data = self.state
@@ -52,7 +52,7 @@ class Coordo(Node):
                 self.state = STATE_WANDERER
                 msg.data = self.state
                 self.state_publisher.publish(msg)
-                print(f'[INFO] {datetime.now()} : Changement d\'état STATE_WANDERER')
+                print(f'[ORCHESTRATOR] [INFO] Changement d\'état STATE_WANDERER')
                 self.start_timer = datetime.now()
 
         elif (self.state == STATE_WANDERER):
@@ -63,7 +63,7 @@ class Coordo(Node):
                 self.state = STATE_ROTATE
                 msg.data = self.state
                 self.state_publisher.publish(msg)
-                print(f'[INFO] {datetime.now()} : Changement d\'état STATE_ROTATE')
+                print(f'[ORCHESTRATOR] [INFO] Changement d\'état STATE_ROTATE')
                 self.start_timer = datetime.now()
         
         elif (self.state == STATE_LOCK_IN): pass
