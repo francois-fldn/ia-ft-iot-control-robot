@@ -21,6 +21,8 @@ class SearchBallBehavior(Node):
         self.state = STATE_STOP
         self.obstacle_ahead = False
 
+        self.log_state = -1
+
         self.timer = self.create_timer(0.1, self.control_loop)
     
     def state_to_str(self,state_int):
@@ -42,23 +44,29 @@ class SearchBallBehavior(Node):
     def control_loop(self):
         msg = Twist()
         
+        prev_log = self.log_state
+
         if (self.state == STATE_STOP):
+            self.log_state = 0
             msg.linear.x = 0.0
             msg.angular.z = 0.0
 
         elif (self.state == STATE_ROTATE):
+            self.log_state = 1
             msg.linear.x = 0.0
             msg.angular.z = 0.5
         
         elif (self.state == STATE_WANDERER):
             if self.obstacle_ahead:
+                self.log_state = 2
                 msg.linear.x = 0.0
                 msg.angular.z = -0.5
             else:
+                self.log_state = 3
                 msg.linear.x = 0.2
                 msg.angular.z = random.uniform(-0.5, 0.5)
         
-        # print(f'[INFO] Applique la vitesse x = {msg.linear.x}, z = {msg.angular.z}')
+        if prev_log != self.log_state : print(f'[INFO] Applique la vitesse x = {msg.linear.x}, z = {msg.angular.z}')
         self.cmd_publisher.publish(msg)
 
 def main():

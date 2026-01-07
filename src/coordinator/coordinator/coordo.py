@@ -2,6 +2,7 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import UInt8
 from datetime import datetime
+from geometry_msgs.msg import PointStamped
 
 STATE_STOP = 0
 STATE_ROTATE = 1
@@ -12,6 +13,7 @@ class Coordo(Node):
     def __init__(self):
         super().__init__('coordo')
         self.state_publisher = self.create_publisher(UInt8, '/turtlebot3_state', 10)
+        self.ball_subscriber = self.create_subscription(PointStamped, '/ball_3d', self.ball_scan_callback, 10)
         # timer_period = 0.5 # seconds
         self.timer = self.create_timer(1/6, self.send_state)
         self.i = 0
@@ -21,6 +23,19 @@ class Coordo(Node):
         msg = UInt8()
         msg.data = self.state
         self.state_publisher.publish(msg)
+
+    def ball_scan_callback(self, msg):
+        prev_state = self.state
+        self.state = STATE_LOCK_IN
+        
+        if prev_state != self.state : print(f'[INFO] {datetime.now()} : Changement d\'état STATE_LOCK_IN')
+        
+        msg = UInt8()
+        msg.data = self.state
+        self.state_publisher.publish(msg)
+        ''' 
+            envoyer le
+        '''
 
     def send_state(self):
         msg = UInt8()
@@ -46,6 +61,8 @@ class Coordo(Node):
                 self.state_publisher.publish(msg)
                 print(f'[INFO] {datetime.now()} : Changement d\'état STATE_ROTATE')
                 self.start_timer = datetime.now()
+        
+        elif (self.state == STATE_LOCK_IN): pass
 
         # msg = String()
         # msg.data = f'Hello, world! {self.i}'
