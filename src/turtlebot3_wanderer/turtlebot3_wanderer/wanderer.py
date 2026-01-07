@@ -14,14 +14,19 @@ STATE_LOCK_IN = 3
 class SearchBallBehavior(Node):
     def __init__(self):
         super().__init__('search_ball_behavior')
-        self.state_publisher = self.create_subscription(UInt8, '/turtlebot3_state', self.state_callback, 10)
         self.scan_subscriber = self.create_subscription(LaserScan, '/scan', self.scan_callback, 10)
         self.cmd_publisher = self.create_publisher(Twist, '/cmd_vel', 10)
+
+        self.point_subscriber = self.create_subscription(PointStamped, '/coordinator/point', self.ball_callback, 10)
+        self.state_publisher = self.create_subscription(UInt8, '/coordinator/state', self.state_callback, 10)
 
         self.state = STATE_STOP
         self.obstacle_ahead = False
 
         self.log_state = -1
+
+        self.ball_position = None
+        self.aligned_with_ball = False
 
         self.timer = self.create_timer(0.1, self.control_loop)
     
@@ -30,8 +35,13 @@ class SearchBallBehavior(Node):
         return states[state_int]
 
     def state_callback(self,msg):
+        prev_state = self.state
         self.state = msg.data
-        print(f'[INFO] {datetime.now()} Reçu état {self.state_to_str(self.state)}')
+        if (prev_state != self.state): print(f'[INFO] {datetime.now()} Reçu état {self.state_to_str(self.state)}')
+
+    def ball_callback(self,msg):
+        self.ball_position = (msg.point.x, msg.point.y, msg.point.z)
+        # print(self.ball_position)
 
     def scan_callback(self,msg):
         # checker entre -30deg et +30deg
@@ -66,6 +76,21 @@ class SearchBallBehavior(Node):
                 msg.linear.x = 0.2
                 msg.angular.z = random.uniform(-0.5, 0.5)
         
+        elif (self.state == STATE_LOCK_IN) :
+            # premiere etape, s'aligner avec la balle
+            if ((-0.3 <= self.ball_position[1]) and (self.ball_position[1] <= 0.3)): self.aligned_with_ball = True
+            else: self.aligned_with_ball = False
+            if not(self.aligned_with_ball):
+                self.log_state = 4
+                if (self.ball_position[1] < 0) : msg.angular.z = -0.1
+                if (self.ball_position[1] > 0) : msg.angular.z = 0.1
+                msg.linear.x = 0.0
+            else:
+                self.log_state = 5
+                msg.linear.x = 0.1
+
+            
+
         if prev_log != self.log_state : print(f'[INFO] Applique la vitesse x = {msg.linear.x}, z = {msg.angular.z}')
         self.cmd_publisher.publish(msg)
 

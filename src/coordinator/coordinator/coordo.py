@@ -12,8 +12,9 @@ STATE_LOCK_IN = 3
 class Coordo(Node):
     def __init__(self):
         super().__init__('coordo')
-        self.state_publisher = self.create_publisher(UInt8, '/turtlebot3_state', 10)
         self.ball_subscriber = self.create_subscription(PointStamped, '/ball_3d', self.ball_scan_callback, 10)
+        self.state_publisher = self.create_publisher(UInt8, '/coordinator/state', 10)
+        self.point_publisher = self.create_publisher(PointStamped, '/coordinator/point', 10)
         # timer_period = 0.5 # seconds
         self.timer = self.create_timer(1/6, self.send_state)
         self.i = 0
@@ -30,9 +31,12 @@ class Coordo(Node):
         
         if prev_state != self.state : print(f'[INFO] {datetime.now()} : Changement d\'état STATE_LOCK_IN')
         
-        msg = UInt8()
-        msg.data = self.state
-        self.state_publisher.publish(msg)
+        msg_state = UInt8()
+        msg_state.data = self.state
+        self.state_publisher.publish(msg_state)
+        
+        self.point_publisher.publish(msg)
+
         ''' 
             envoyer le
         '''
