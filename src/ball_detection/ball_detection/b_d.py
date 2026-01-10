@@ -69,6 +69,9 @@ class BallDetectorHybrid(Node):
 
         debug_image = cv_rgb.copy()
         cam_h, cam_w = cv_rgb.shape[:2]
+        
+        # Flag pour savoir si une balle a été détectée
+        ball_found = False
 
         # --- IA Inference ---
         img_resized = cv2.resize(cv_rgb, (self.model_w, self.model_h))
@@ -137,7 +140,12 @@ class BallDetectorHybrid(Node):
                                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
                         
                         self.publish_result(raw_x, raw_y, raw_z)
+                        ball_found = True
                         break 
+        
+        # Si aucune balle n'a été détectée, publier des coordonnées aberrantes
+        if not ball_found:
+            self.publish_no_ball()
 
         try: self.pub_debug_img.publish(self.bridge.cv2_to_imgmsg(debug_image, "bgr8"))
         except: pass
@@ -161,6 +169,19 @@ class BallDetectorHybrid(Node):
         marker.scale.x = 0.1; marker.scale.y = 0.1; marker.scale.z = 0.1
         marker.color.a = 1.0; marker.color.r = 1.0; marker.color.g = 1.0; marker.color.b = 0.0
         self.pub_marker.publish(marker)
+    
+    def publish_no_ball(self):
+        """Publie des coordonnées aberrantes quand aucune balle n'est détectée"""
+        pt = PointStamped()
+        pt.header.frame_id = "base_footprint"
+        pt.header.stamp = self.get_clock().now().to_msg()
+        
+        # Coordonnées aberrantes pour indiquer l'absence de balle
+        pt.point.x = 1000.0
+        pt.point.y = 1000.0
+        pt.point.z = 1000.0
+        
+        self.pub_ball.publish(pt)
 
 def main(args=None):
     rclpy.init(args=args)
