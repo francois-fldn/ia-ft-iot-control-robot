@@ -5,6 +5,7 @@ from sensor_msgs.msg import LaserScan
 from std_msgs.msg import UInt8
 import random
 from datetime import datetime
+import math
 
 STATE_STOP = 0
 STATE_ROTATE = 1
@@ -27,6 +28,13 @@ class SearchBallBehavior(Node):
 
         self.ball_position = None
         self.aligned_with_ball = False
+        # self.initiated_rotation = False
+        self.rotating = False
+        self.omega = 0.0
+
+        self.near_ball = False
+        self.deplacing = False
+        self.vitesse = 0.0
 
         self.timer = self.create_timer(0.1, self.control_loop)
     
@@ -78,16 +86,50 @@ class SearchBallBehavior(Node):
         
         elif (self.state == STATE_LOCK_IN) :
             # premiere etape, s'aligner avec la balle
-            if ((-0.3 <= self.ball_position[1]) and (self.ball_position[1] <= 0.3)): self.aligned_with_ball = True
-            else: self.aligned_with_ball = False
-            if not(self.aligned_with_ball):
-                self.log_state = 4
-                if (self.ball_position[1] < 0) : msg.angular.z = -0.1
-                if (self.ball_position[1] > 0) : msg.angular.z = 0.1
-                msg.linear.x = 0.0
-            else:
-                self.log_state = 5
-                msg.linear.x = 0.1
+
+            if (not(self.aligned_with_ball)):
+                if (self.rotating): msg.angular.z = self.omega
+                else: 
+                    self.log_state = 4
+                    self.omega = (math.atan2(self.ball_position[1], self.ball_position[0]))/2
+                    msg.angular.z = self.omega
+                    self.rotating = True
+                    self.start_timer = datetime.now()
+                delta = datetime.now() - self.start_timer
+                if (delta.seconds >= 2):
+                    self.aligned_with_ball = True
+                    self.rotating = False
+                    self.near_ball = False 
+
+            if (self.aligned_with_ball and not(self.near_ball)):
+                msg.angular.z = 0.0
+                if (self.deplacing): msg.linear.x = self.vitesse
+                else:
+                    print(f"[EXPLORATOR] [INFO] Deplacing vers {round(self.ball_position[0],2), round(self.ball_position[1],2)}")
+                    self.start_timer = datetime.now()
+                    self.log_state = 5
+                    distance = math.sqrt(self.ball_position[0]**2 + self.ball_position[1]**2)
+                    self.vitesse = distance / 10
+                    msg.linear.x = self.vitesse
+                    self.deplacing = True
+                delta = datetime.now() - self.start_timer
+                if (delta.seconds >= 11):
+                    self.near_ball = True
+                    self.deplacing = False
+                    self.aligned_with_ball = False
+
+
+            # print(f"LA balle est position : {self.ball_position[1]}")
+            # if ((-0.6 <= self.ball_position[1]) and (self.ball_position[1] <= 0.6)): self.aligned_with_ball = True
+            # else: self.aligned_with_ball = False
+            # if not(self.aligned_with_ball):
+            #     self.log_state = 4
+            #     if (self.ball_position[1] < 0) : msg.angular.z = -0.1
+            #     if (self.ball_position[1] > 0) : msg.angular.z = 0.1
+            #     msg.linear.x = 0.0
+            # else:
+            #     self.log_state = 5
+            #     msg.linear.x = 0.1
 
             
 

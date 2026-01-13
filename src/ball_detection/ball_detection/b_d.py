@@ -29,7 +29,7 @@ class BallDetectorHybrid(Node):
             self.get_logger().error(f" Erreur Init IA: {e}")
             raise e
 
-        self.conf_threshold = 0.25 
+        self.conf_threshold = 0.70
         self.model_w = 320; self.model_h = 320
         self.latest_depth_img = None 
         
