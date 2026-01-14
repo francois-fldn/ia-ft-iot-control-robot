@@ -38,7 +38,7 @@ benchmark:
   warmup_iterations: 10  # Nombre d'itérations de chauffe
   
   # Seuil de confiance pour les détections
-  confidence_threshold: 0.30
+  confidence_threshold: 0.60
 
 # Sortie des résultats
 output:
