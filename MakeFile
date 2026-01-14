@@ -1,0 +1,5 @@
+clean:
+	rm -rf build/ install/ log/
+
+launch_simu:
+	ros2 launch turtlebot3_gazebo projects_empty_world.launch.py
