@@ -5,6 +5,7 @@ from sensor_msgs.msg import LaserScan
 from std_msgs.msg import UInt8
 import random
 from datetime import datetime
+import logging
 import math
 
 STATE_STOP = 0
@@ -36,6 +37,12 @@ class SearchBallBehavior(Node):
         self.deplacing = False
         self.vitesse = 0.0
 
+        self.logger = logging.getLogger("EXPLORATOR")
+        logging.basicConfig(
+            level = logging.INFO,
+            format = "[EXPLORATOR] [%(levelname)s] %(message)s"
+            )
+
         self.timer = self.create_timer(0.1, self.control_loop)
     
     def state_to_str(self,state_int):
@@ -45,7 +52,7 @@ class SearchBallBehavior(Node):
     def state_callback(self,msg):
         prev_state = self.state
         self.state = msg.data
-        if (prev_state != self.state): print(f'[EXPLORATOR] [INFO] Reçu état {self.state_to_str(self.state)}')
+        if (prev_state != self.state): self.logger.info(f'Reçu état {self.state_to_str(self.state)}')
 
     def ball_callback(self,msg):
         self.ball_position = (msg.point.x, msg.point.y, msg.point.z)
@@ -105,7 +112,7 @@ class SearchBallBehavior(Node):
                 msg.angular.z = 0.0
                 if (self.deplacing): msg.linear.x = self.vitesse
                 else:
-                    print(f"[EXPLORATOR] [INFO] Deplacing vers {round(self.ball_position[0],2), round(self.ball_position[1],2)}")
+                    # logger.info(f"Deplacing vers {round(self.ball_position[0],2), round(self.ball_position[1],2)}")
                     self.start_timer = datetime.now()
                     self.log_state = 5
                     distance = math.sqrt(self.ball_position[0]**2 + self.ball_position[1]**2)
@@ -118,22 +125,7 @@ class SearchBallBehavior(Node):
                     self.deplacing = False
                     self.aligned_with_ball = False
 
-
-            # print(f"LA balle est position : {self.ball_position[1]}")
-            # if ((-0.6 <= self.ball_position[1]) and (self.ball_position[1] <= 0.6)): self.aligned_with_ball = True
-            # else: self.aligned_with_ball = False
-            # if not(self.aligned_with_ball):
-            #     self.log_state = 4
-            #     if (self.ball_position[1] < 0) : msg.angular.z = -0.1
-            #     if (self.ball_position[1] > 0) : msg.angular.z = 0.1
-            #     msg.linear.x = 0.0
-            # else:
-            #     self.log_state = 5
-            #     msg.linear.x = 0.1
-
-            
-
-        if prev_log != self.log_state : print(f'[EXPLORATOR] [INFO] Applique la vitesse x = {msg.linear.x}, z = {msg.angular.z}')
+        if prev_log != self.log_state : self.logger.info(f'Applique la vitesse x = {msg.linear.x}, z = {msg.angular.z}')
         self.cmd_publisher.publish(msg)
 
 def main():
