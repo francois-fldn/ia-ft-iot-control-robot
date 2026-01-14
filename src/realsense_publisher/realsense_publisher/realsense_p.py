@@ -5,15 +5,16 @@ from cv_bridge import CvBridge
 from std_msgs.msg import Header
 import pyrealsense2 as rs
 import numpy as np
+from rclpy.qos import qos_profile_sensor_data
 
 class PointCloudPublisher(Node):
     def __init__(self):
         super().__init__('pointcloudpublisher')
         
         # Publishers
-        self.depth_image_publisher_ = self.create_publisher(Image, 'Realsense/Image/Depth', 10)
-        self.color_image_publisher_ = self.create_publisher(Image, 'Realsense/Image/Color', 10)
-        self.camera_info_publisher_ = self.create_publisher(CameraInfo, 'Realsense/CameraInfo', 10)
+        self.depth_image_publisher_ = self.create_publisher(Image, 'Realsense/Image/Depth', qos_profile_sensor_data)
+        self.color_image_publisher_ = self.create_publisher(Image, 'Realsense/Image/Color', qos_profile_sensor_data)
+        self.camera_info_publisher_ = self.create_publisher(CameraInfo, 'Realsense/CameraInfo', qos_profile_sensor_data)
         
         # Timer 6 FPS (1/6 ≈ 0.167)
         self.timer = self.create_timer(0.167, self.timer_callback)
@@ -36,19 +37,21 @@ class PointCloudPublisher(Node):
             profile = self.pipe.start(self.config)
             stream_profile = profile.get_stream(rs.stream.color) 
             self.intrinsics = stream_profile.as_video_stream_profile().get_intrinsics()
-            self.get_logger().info("✅ Caméra OK.")
+            self.get_logger().info("Caméra OK.")
         except Exception as e:
             self.get_logger().fatal(f"Erreur Caméra: {e}")
 
     def timer_callback(self):
         try:
-            frames = self.pipe.wait_for_frames(timeout_ms=2000)
-            aligned_frames = self.align.process(frames)
-            
-            depth_frame = aligned_frames.get_depth_frame()
-            color_frame = aligned_frames.get_color_frame()
-            
-            if not depth_frame or not color_frame: return
+            frames = self.pipe.poll_for_frames()
+            # aligned_frames = self.align.process(frames)
+
+            depth_frame = frames.get_depth_frame()
+            color_frame = frames.get_color_frame()
+
+            if not depth_frame or not color_frame:
+                self.get_logger().warning(f"Aucune frame")
+                return
 
             # Filtre
             depth_frame = self.hole_filling.process(depth_frame)
@@ -69,13 +72,13 @@ class PointCloudPublisher(Node):
             msg_depth = self.bridge.cv2_to_imgmsg(depth_image, "passthrough")
             msg_depth.header = header
             self.depth_image_publisher_.publish(msg_depth)
-            
+
             cam_info = self.get_camera_info_msg(self.intrinsics)
             cam_info.header = header
             self.camera_info_publisher_.publish(cam_info)
 
-        except Exception:
-            pass
+        except Exception as e:
+            self.get_logger().error(f"{e}")
 
     def get_camera_info_msg(self, intrinsics):
         info = CameraInfo()
