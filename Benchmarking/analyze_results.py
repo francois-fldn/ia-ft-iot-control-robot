@@ -20,27 +20,112 @@ class BenchmarkAnalyzer:
     def __init__(self, results_path: str):
         """
         Args:
-            results_path: Chemin vers le fichier JSON de résultats
+            results_path: Chemin vers le fichier JSON ou le dossier de résultats
         """
         self.results_path = Path(results_path)
-        self.df = self._load_results()
-        self.output_dir = self.results_path.parent / "plots"
+        self.df = self._load_and_aggregate_results()
+        
+        # Définir le dossier de sortie
+        if self.results_path.is_dir():
+            self.output_dir = self.results_path / "plots"
+        else:
+            self.output_dir = self.results_path.parent / "plots"
         self.output_dir.mkdir(exist_ok=True)
         
         # Configuration du style
         sns.set_style("whitegrid")
         plt.rcParams['figure.figsize'] = (12, 6)
     
-    def _load_results(self) -> pd.DataFrame:
-        """Charge les résultats"""
-        if self.results_path.suffix == '.json':
+    def _load_and_aggregate_results(self) -> pd.DataFrame:
+        """Charge, agrège les résultats et ajoute la consommation"""
+        all_data = []
+        
+        # 1. Charger les fichiers de résultats
+        if self.results_path.is_dir():
+            files = list(self.results_path.glob("benchmark_results_*.json"))
+            if not files:
+                raise ValueError(f"Aucun fichier JSON trouvé dans {self.results_path}")
+            print(f"📊 Chargement de {len(files)} fichiers de résultats...")
+            for f in files:
+                with open(f, 'r') as json_file:
+                    all_data.extend(json.load(json_file))
+        elif self.results_path.suffix == '.json':
             with open(self.results_path, 'r') as f:
-                data = json.load(f)
-            return pd.DataFrame(data)
-        elif self.results_path.suffix == '.csv':
-            return pd.read_csv(self.results_path)
+                all_data = json.load(f)
         else:
-            raise ValueError(f"Format non supporté: {self.results_path.suffix}")
+            raise ValueError(f"Format non supporté: {self.results_path}")
+
+        # Conversion en DataFrame
+        df_raw = pd.DataFrame(all_data)
+        
+        # 2. Agréger par modèle (Moyenne des répétitions)
+        # Colonnes de métadonnées à garder (identiques pour un même modèle)
+        meta_cols = ['model_name', 'model_path', 'model_directory', 'model_type', 
+                    'input_size', 'is_edgetpu', 'runtime', 'platform', 'timestamp']
+
+        # Colonnes numériques à agréger (exclure les métadonnées qui pourraient être numériques comme input_size)
+        all_numeric = df_raw.select_dtypes(include=[np.number]).columns.tolist()
+        numeric_cols = [c for c in all_numeric if c not in meta_cols]
+        
+        print("🔄 Agrégation des répétitions (moyenne/std)...")
+        # Grouper et calculer moyenne + écart-type
+        df_agg = df_raw.groupby('model_name')[numeric_cols].agg(['mean', 'std']).reset_index()
+        
+        # Aplatir les colonnes MultiIndex (ex: inference_time_mean_mean, inference_time_mean_std)
+        new_cols = ['model_name']
+        for col in numeric_cols:
+            new_cols.append(col) # Garder le nom original pour la moyenne
+            new_cols.append(f"{col}_std_dev") # Suffixe pour l'écart-type entre runs
+        
+        # Renommer les colonnes aplaties
+        df_agg.columns = ['model_name'] + [f"{col[0]}_std_dev" if col[1]=='std' else col[0] for col in df_agg.columns[1:]]
+        
+        # Récupérer les métadonnées (prendre la première occurrence)
+        df_meta = df_raw.drop_duplicates(subset=['model_name'])[meta_cols]
+        df_final = pd.merge(df_meta, df_agg, on='model_name')
+        
+        # 3. Ajouter la consommation électrique
+        conso_file = None
+        if self.results_path.is_dir():
+            conso_file = self.results_path / "benchmark_conso_Amp.json"
+        else:
+            conso_file = self.results_path.parent / "benchmark_conso_Amp.json"
+            
+        if conso_file.exists():
+            print(f"⚡ Chargement de la consommation: {conso_file.name}")
+            with open(conso_file, 'r') as f:
+                conso_data = json.load(f)
+            
+            # Créer un dict pour mapping rapide
+            conso_map = {item['model_name']: item for item in conso_data}
+            
+            # Ajouter les colonnes
+            powers = []
+            efficiencies = []
+            
+            for _, row in df_final.iterrows():
+                model = row['model_name']
+                if model in conso_map:
+                    # Amps -> Watts (5V pour RPi/Coral USB)
+                    amps = conso_map[model].get('conso_ampere_mean', 0)
+                    watts = amps * 5.0
+                    powers.append(watts)
+                    
+                    # Efficacité (FPS / Watt)
+                    eff = row['fps_mean'] / watts if watts > 0 else 0
+                    efficiencies.append(eff)
+                else:
+                    powers.append(0)
+                    efficiencies.append(0)
+            
+            df_final['power_watts'] = powers
+            df_final['efficiency_fps_watt'] = efficiencies
+        else:
+            print("⚠️ Fichier benchmark_conso_Amp.json introuvable")
+            df_final['power_watts'] = 0
+            df_final['efficiency_fps_watt'] = 0
+            
+        return df_final
     
     def plot_inference_time_comparison(self):
         """Compare les temps d'inférence entre modèles"""
@@ -262,6 +347,74 @@ class BenchmarkAnalyzer:
         print(f"✓ Graphique sauvegardé: {save_path}")
         plt.close()
     
+    def plot_power_consumption(self):
+        """Compare la consommation électrique (Watts)"""
+        if 'power_watts' not in self.df.columns or self.df['power_watts'].sum() == 0:
+            print("⚠ Pas de données de consommation disponibles")
+            return
+            
+        fig, ax = plt.subplots(figsize=(14, 8))
+        
+        df_sorted = self.df.sort_values('power_watts')
+        
+        df_sorted['label'] = df_sorted.apply(
+            lambda x: f"{x['model_name'].replace('.tflite', '')}", 
+            axis=1
+        )
+        
+        x_pos = np.arange(len(df_sorted))
+        bars = ax.bar(x_pos, df_sorted['power_watts'], alpha=0.7, color='orange')
+        
+        ax.set_xlabel('Modèle', fontsize=12)
+        ax.set_ylabel('Consommation (Watts)', fontsize=12)
+        ax.set_title('Consommation Électrique (estimée 5V)', fontsize=14, fontweight='bold')
+        ax.set_xticks(x_pos)
+        ax.set_xticklabels(df_sorted['label'], rotation=45, ha='right', fontsize=9)
+        
+        # Ajouter les valeurs sur les barres
+        for i, v in enumerate(df_sorted['power_watts']):
+            ax.text(i, v + 0.1, f"{v:.2f}W", ha='center', fontsize=9)
+        
+        plt.tight_layout()
+        save_path = self.output_dir / "power_consumption.png"
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"✓ Graphique sauvegardé: {save_path}")
+        plt.close()
+
+    def plot_efficiency_watts(self):
+        """Compare l'efficacité énergétique (FPS/Watt)"""
+        if 'efficiency_fps_watt' not in self.df.columns or self.df['efficiency_fps_watt'].sum() == 0:
+            print("⚠ Pas de données d'efficacité disponibles")
+            return
+            
+        fig, ax = plt.subplots(figsize=(14, 8))
+        
+        df_sorted = self.df.sort_values('efficiency_fps_watt', ascending=False)
+        
+        df_sorted['label'] = df_sorted.apply(
+            lambda x: f"{x['model_name'].replace('.tflite', '')}", 
+            axis=1
+        )
+        
+        x_pos = np.arange(len(df_sorted))
+        bars = ax.bar(x_pos, df_sorted['efficiency_fps_watt'], alpha=0.7, color='green')
+        
+        ax.set_xlabel('Modèle', fontsize=12)
+        ax.set_ylabel('Efficacité (FPS / Watt)', fontsize=12)
+        ax.set_title('Efficacité Énergétique', fontsize=14, fontweight='bold')
+        ax.set_xticks(x_pos)
+        ax.set_xticklabels(df_sorted['label'], rotation=45, ha='right', fontsize=9)
+        
+        # Ajouter les valeurs
+        for i, v in enumerate(df_sorted['efficiency_fps_watt']):
+            ax.text(i, v + 1, f"{v:.1f}", ha='center', fontsize=9)
+        
+        plt.tight_layout()
+        save_path = self.output_dir / "efficiency_fps_per_watt.png"
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"✓ Graphique sauvegardé: {save_path}")
+        plt.close()
+
     def generate_html_report(self):
         """Génère un rapport HTML"""
         html_content = f"""
@@ -380,7 +533,10 @@ class BenchmarkAnalyzer:
             ("fps_comparison.png", "FPS"),
             ("memory_usage.png", "Utilisation mémoire"),
             ("cpu_usage.png", "Utilisation CPU"),
-            ("efficiency_scatter.png", "Efficacité"),
+            ("temperature.png", "Température"),
+            ("power_consumption.png", "Consommation Électrique (W)"),
+            ("efficiency_fps_per_watt.png", "Efficacité (FPS/W)"),
+            ("efficiency_scatter.png", "Efficacité (FPS vs Mémoire)"),
         ]
         
         for plot_file, plot_title in plots:
@@ -405,7 +561,8 @@ class BenchmarkAnalyzer:
                 <th>Inférence (ms)</th>
                 <th>FPS</th>
                 <th>Mémoire (MB)</th>
-                <th>CPU (%)</th>
+                <th>Puissance (W)</th>
+                <th>Efficacité (FPS/W)</th>
                 <th>Confiance</th>
             </tr>
         </thead>
@@ -427,10 +584,11 @@ class BenchmarkAnalyzer:
                 <td>{row['model_name']}</td>
                 <td>{row['input_size']}</td>
                 <td>{row['model_type']}{' + EdgeTPU' if row['is_edgetpu'] else ''}</td>
-                <td>{row['inference_time_mean']:.2f} ± {row['inference_time_std']:.2f}</td>
+                <td>{row['inference_time_mean']:.2f} ± {row['inference_time_mean_std_dev']:.2f}</td>
                 <td>{row['fps_mean']:.2f}</td>
                 <td>{row['memory_usage_mean']:.1f}</td>
-                <td>{row['cpu_usage_mean']:.1f}</td>
+                <td>{row['power_watts']:.2f}W</td>
+                <td>{row['efficiency_fps_watt']:.1f}</td>
                 <td>{row['confidence_mean']:.3f}</td>
             </tr>
 """
@@ -463,6 +621,8 @@ class BenchmarkAnalyzer:
         self.plot_memory_usage()
         self.plot_cpu_usage()
         self.plot_temperature()
+        self.plot_power_consumption()
+        self.plot_efficiency_watts()
         self.plot_efficiency_scatter()
         
         print("\nGénération du rapport HTML...")

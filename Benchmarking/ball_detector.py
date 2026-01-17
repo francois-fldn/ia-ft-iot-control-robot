@@ -63,13 +63,45 @@ class BallDetectorBenchmark:
     
     def _load_tflite(self):
         """Charge un modèle TFLite"""
-        import tflite_runtime.interpreter as tflite
-        
         try:
+            # Essayer d'importer tflite_runtime, sinon fallback sur tensorflow
+            try:
+                import tflite_runtime.interpreter as tflite
+            except ImportError:
+                import tensorflow.lite as tflite
+            
             if self.use_edgetpu:
-                from pycoral.utils import edgetpu
-                self.interpreter = edgetpu.make_interpreter(self.model_path)
-                print(f"✓ Modèle EdgeTPU chargé: {os.path.basename(self.model_path)}")
+                # Chargement direct du délégué EdgeTPU sans pycoral
+                try:
+                    # Essayer plusieurs noms possibles pour la librairie
+                    libs = ['libedgetpu.so.1', 'libedgetpu.so.1.0', 'libedgetpu.so']
+                    delegate = None
+                    for lib in libs:
+                        try:
+                            delegate = tflite.load_delegate(lib)
+                            print(f"✓ Délégué EdgeTPU chargé: {lib}")
+                            break
+                        except ValueError:
+                            continue
+                    
+                    if delegate is None:
+                        raise ValueError("Impossible de charger libedgetpu.so.1")
+                        
+                    self.interpreter = tflite.Interpreter(
+                        model_path=self.model_path,
+                        experimental_delegates=[delegate]
+                    )
+                    print(f"✓ Modèle EdgeTPU chargé: {os.path.basename(self.model_path)}")
+                    
+                except Exception as e:
+                    print(f"⚠️  Échec chargement EdgeTPU direct: {e}")
+                    # Fallback sur pycoral si installé (ancienne méthode)
+                    try:
+                        from pycoral.utils import edgetpu
+                        self.interpreter = edgetpu.make_interpreter(self.model_path)
+                        print(f"✓ Modèle EdgeTPU chargé (via pycoral): {os.path.basename(self.model_path)}")
+                    except ImportError:
+                        raise ValueError(f"EdgeTPU requis mais impossible à charger (ni libedgetpu ni pycoral): {e}")
             else:
                 self.interpreter = tflite.Interpreter(model_path=self.model_path)
                 print(f"✓ Modèle TFLite chargé: {os.path.basename(self.model_path)}")

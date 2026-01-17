@@ -54,16 +54,70 @@ python3 run_benchmark.py tennis_ball_dataset.pkl.gz --platform raspberry_pi4_cor
 
 ### 4️⃣ Analyser les résultats
 
+#### Analyse d'un benchmark unique
 ```bash
-# Analyse individuelle
+# Analyse d'un seul fichier JSON
 python3 analyze_results.py benchmark_results/benchmark_results_TIMESTAMP.json
 
 # Ouvrir le rapport HTML
 open benchmark_results/benchmark_report_TIMESTAMP.html
-
-# Comparer plusieurs plateformes
-python3 compare_platforms.py results_pc.json results_rpi4.json results_coral.json
 ```
+
+#### 🔄 Analyse avec agrégation (plusieurs répétitions)
+Pour améliorer la fiabilité des résultats, exécutez le benchmark **10 fois** et analysez la moyenne :
+
+```bash
+# 1. Répéter le benchmark 10 fois
+for i in {1..10}; do
+    python3 run_benchmark.py tennis_ball_dataset.pkl.gz
+done
+
+# 2. Analyser le dossier entier (calcule automatiquement moyenne + écart-type)
+python3 analyze_results.py benchmark_results/benchmark_results_PLATFORM/
+
+# Résultat : Graphiques avec barres d'erreur montrant la stabilité
+```
+
+**Avantages de l'agrégation :**
+- 📊 **Moyenne** : Valeur représentative de la performance
+- 📉 **Écart-type (std)** : Mesure de la stabilité (plus faible = plus fiable)
+- ✅ Élimine les valeurs aberrantes dues aux pics de charge système
+
+#### ⚡ Analyse de la consommation électrique (Raspberry Pi uniquement)
+Si un fichier `benchmark_conso_Amp.json` est présent dans le dossier des résultats, l'analyse inclut automatiquement :
+- **Consommation en Watts** (Ampères × 5V)
+- **Efficacité énergétique** (FPS / Watt)
+
+Exemple de structure attendue pour `benchmark_conso_Amp.json` :
+```json
+[
+  {
+    "model_name": "best-int8_256.tflite",
+    "conso_ampere_mean": 0.85,
+    "conso_ampere_std": 0.02
+  }
+]
+```
+
+**Graphiques générés :**
+- `power_consumption.png` : Consommation en Watts par modèle
+- `efficiency_fps_per_watt.png` : Efficacité (FPS/W) - plus c'est élevé, mieux c'est !
+
+#### 🔄 Comparer plusieurs plateformes
+```bash
+# Analyser et comparer 2 plateformes
+python3 compare_platforms.py benchmark_results/benchmark_results_pi4/ benchmark_results/benchmark_results_coral/
+
+# Résultat : Rapport HTML dans benchmark_results/comparison/
+```
+
+**Graphiques de comparaison générés :**
+- Temps d'inférence par plateforme
+- FPS par plateforme
+- Speedup relatif (heatmap)
+- Consommation électrique (si disponible)
+- Efficacité énergétique (FPS/Watt)
+
 
 ---
 
@@ -77,11 +131,15 @@ python3 compare_platforms.py results_pc.json results_rpi4.json results_coral.jso
 | **CPU Usage** | Utilisation processeur (mean, max) | % |
 | **Memory Usage** | Consommation RAM (mean, max) | MB |
 | **Temperature** | Température système (si disponible) | °C |
+| **Power** | Consommation électrique (Raspberry Pi uniquement) | W |
+| **Efficiency** | Efficacité énergétique (FPS / Watt) | fps/W |
 | **Detections 2D** | Balles détectées dans l'image | count |
 | **Detections 3D** | Balles avec coordonnées 3D valides | count |
-| **Confidence** | Score de confiance (mean, std) | 0-1 |
+| **Confidence** | Score de confiance (mean, std, max) | 0-1 |
 
 **std** (écart-type) = stabilité des performances. Plus c'est faible, plus c'est stable.
+
+**💡 Astuce** : Avec l'agrégation de 10 répétitions, toutes les métriques incluent automatiquement leur écart-type, montrant la reproductibilité.
 
 ---
 
@@ -120,14 +178,14 @@ python3 record_realsense.py --output tennis_dataset.pkl.gz --frames 300
 python3 run_benchmark.py tennis_dataset.pkl.gz --platform pc
 
 # 3. Transférer le dataset sur Raspberry Pi
-scp tennis_dataset.pkl.gz pi@raspberrypi:~/
+scp tennis_ball_dataset.pkl.gz pi@raspberrypi:~/
 
 # 4. Benchmarker sur RPi4
 ssh pi@raspberrypi
-python3 run_benchmark.py tennis_dataset.pkl.gz --platform raspberry_pi4
+python3 run_benchmark.py tennis_ball_dataset.pkl.gz --platform raspberry_pi4
 
 # 5. Benchmarker sur RPi4 + Coral (si disponible)
-python3 run_benchmark.py tennis_dataset.pkl.gz --platform raspberry_pi4_coral
+python3 run_benchmark.py tennis_ball_dataset.pkl.gz --platform raspberry_pi4_coral
 
 # 6. Récupérer tous les JSON et comparer
 python3 compare_platforms.py results_*.json

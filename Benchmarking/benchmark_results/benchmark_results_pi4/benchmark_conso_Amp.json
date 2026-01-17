@@ -1,0 +1,176 @@
+[
+    {
+        "model_name": "None",
+        "platform": "raspberry_pi4",
+        "conso_ampere_max": 0.44,
+        "conso_ampere_min": 0.39
+    },
+    {
+        "model_name": "best-fp32_256.tflite",
+        "platform": "raspberry_pi4",
+        "conso_ampere_mean": 0.68,
+        "conso_ampere_max": 0.75,
+        "conso_ampere_min": 0.64
+    },
+    {
+        "model_name": "best-fp16_256.tflite",
+        "platform": "raspberry_pi4",
+        "conso_ampere_mean": 0.66,
+        "conso_ampere_max": 0.74,
+        "conso_ampere_min": 0.63
+    },
+    {
+        "model_name": "best-int8_256.tflite",
+        "platform": "raspberry_pi4",
+        "conso_ampere_mean": 0.64,
+        "conso_ampere_max": 0.72,
+        "conso_ampere_min": 0.58
+    },
+    {
+        "model_name": "best-fp32_256.onnx",
+        "platform": "raspberry_pi4",
+        "conso_ampere_mean": 1.16,
+        "conso_ampere_max": 1.22,
+        "conso_ampere_min": 1.13
+    },
+    {
+        "model_name": "best-fp16_256.onnx",
+        "platform": "raspberry_pi4",
+        "conso_ampere_mean": 1.18,
+        "conso_ampere_max": 1.24,
+        "conso_ampere_min": 1.16
+    },
+    {
+        "model_name": "best-int8_256.onnx",
+        "platform": "raspberry_pi4",
+        "conso_ampere_mean": 1.19,
+        "conso_ampere_max": 1.27,
+        "conso_ampere_min": 1.16
+    },
+    {
+        "model_name": "best-fp32_320.tflite",
+        "platform": "raspberry_pi4",
+        "conso_ampere_mean": 0.73,
+        "conso_ampere_max": 0.80,
+        "conso_ampere_min": 0.63
+    },
+    {
+        "model_name": "best-fp16_320.tflite",
+        "platform": "raspberry_pi4",
+        "conso_ampere_mean": 0.72,
+        "conso_ampere_max": 0.78,
+        "conso_ampere_min": 0.62
+    },
+    {
+        "model_name": "best-int8_320.tflite",
+        "platform": "raspberry_pi4",
+        "conso_ampere_mean": 0.68,
+        "conso_ampere_max": 0.74,
+        "conso_ampere_min": 0.62
+    },
+    {
+        "model_name": "best-fp32_320.onnx",
+        "platform": "raspberry_pi4",
+        "conso_ampere_mean": 1.21,
+        "conso_ampere_max": 1.22,
+        "conso_ampere_min": 0.65
+    },
+    {
+        "model_name": "best-fp16_320.onnx",
+        "platform": "raspberry_pi4",
+        "conso_ampere_mean": 1.23,
+        "conso_ampere_max": 1.27,
+        "conso_ampere_min": 0.64
+    },
+    {
+        "model_name": "best-int8_320.onnx",
+        "platform": "raspberry_pi4",
+        "conso_ampere_mean": 1.23,
+        "conso_ampere_max": 1.28,
+        "conso_ampere_min": 1.17
+    },
+    {
+        "model_name": "best-fp32_256_pruned.tflite",
+        "platform": "raspberry_pi4",
+        "conso_ampere_mean": 0.64,
+        "conso_ampere_max": 0.72,
+        "conso_ampere_min": 0.62
+    },
+    {
+        "model_name": "best-fp16_256_pruned.tflite",
+        "platform": "raspberry_pi4",
+        "conso_ampere_mean": 0.63,
+        "conso_ampere_max": 0.71,
+        "conso_ampere_min": 0.62
+    },
+    {
+        "model_name": "best-int8_256_pruned.tflite",
+        "platform": "raspberry_pi4",
+        "conso_ampere_mean": 0.62,
+        "conso_ampere_max": 0.69,
+        "conso_ampere_min": 0.58
+    },
+    {
+        "model_name": "best-fp32_256_pruned.onnx",
+        "platform": "raspberry_pi4",
+        "conso_ampere_mean": 1.16,
+        "conso_ampere_max": 1.23,
+        "conso_ampere_min": 1.17
+    },
+    {
+        "model_name": "best-fp16_256_pruned.onnx",
+        "platform": "raspberry_pi4",
+        "conso_ampere_mean": 1.17,
+        "conso_ampere_max": 1.23,
+        "conso_ampere_min": 1.15
+    },
+    {
+        "model_name": "best-int8_256_pruned.onnx",
+        "platform": "raspberry_pi4",
+        "conso_ampere_mean": 1.18,
+        "conso_ampere_max": 1.25,
+        "conso_ampere_min": 1.14
+    },
+    {
+        "model_name": "best-fp32_320_pruned.tflite",
+        "platform": "raspberry_pi4",
+        "conso_ampere_mean": 0.71,
+        "conso_ampere_max": 0.76,
+        "conso_ampere_min": 0.65
+    },
+    {
+        "model_name": "best-fp16_320_pruned.tflite",
+        "platform": "raspberry_pi4",
+        "conso_ampere_mean": 0.68,
+        "conso_ampere_max": 0.75,
+        "conso_ampere_min": 0.64
+    },
+    {
+        "model_name": "best-int8_320_pruned.tflite",
+        "platform": "raspberry_pi4",
+        "conso_ampere_mean": 0.64,
+        "conso_ampere_max": 0.73,
+        "conso_ampere_min": 0.62
+    },
+    {
+        "model_name": "best-fp32_320_pruned.onnx",
+        "platform": "raspberry_pi4",
+        "conso_ampere_mean": 1.19,
+        "conso_ampere_max": 1.27,
+        "conso_ampere_min": 0.62
+    },
+    {
+        "model_name": "best-fp16_320_pruned.onnx",
+        "platform": "raspberry_pi4",
+        "conso_ampere_mean": 1.20,
+        "conso_ampere_max": 1.26,
+        "conso_ampere_min": 0.63
+    },
+    {
+        "model_name": "best-int8_320_pruned.onnx",
+        "platform": "raspberry_pi4",
+        "conso_ampere_mean": 1.19,
+        "conso_ampere_max": 1.28,
+        "conso_ampere_min": 0.60
+    }
+]

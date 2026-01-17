@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Script de comparaison multi-plateformes
-Compare les résultats de benchmarking entre différentes plateformes
+Script de comparaison multi-plateformes - Version Simplifiée
+Compare tous les modèles de chaque plateforme côte à côte
 """
 
 import json
@@ -13,390 +13,240 @@ import argparse
 import numpy as np
 
 
-class MultiPlatformComparator:
+def load_aggregated_data(directory):
+    """Charge et agrège les données d'un dossier/fichier"""
+    source = Path(directory)
+    all_data = []
+    
+    # Charger les résultats
+    if source.is_dir():
+        files = list(source.glob("benchmark_results_*.json"))
+        for f in files:
+            with open(f, 'r') as jf:
+                all_data.extend(json.load(jf))
+    elif source.suffix == '.json':
+        with open(source, 'r') as f:
+            all_data = json.load(f)
+    else:
+        return pd.DataFrame(), {}
+    
+    if not all_data:
+        return pd.DataFrame(), {}
+    
+    # Agréger par modèle (moyenne et écart-type des répétitions)
+    df = pd.DataFrame(all_data)
+    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    meta_cols = ['model_name', 'platform', 'model_type', 'input_size', 'is_edgetpu', 'timestamp']
+    numeric_cols = [c for c in numeric_cols if c not in meta_cols]
+    
+    # Calculer uniquement moyenne
+    df_agg = df.groupby('model_name')[numeric_cols].mean().reset_index()
+    
+    # Récupérer métadonnées
+    meta_cols_existing = [c for c in meta_cols if c in df.columns]
+    df_meta = df[meta_cols_existing].drop_duplicates(subset=['model_name'])
+    
+    # Merge
+    df_final = pd.merge(df_meta, df_agg, on='model_name', how='inner')
+    
+    # Charger consommation si disponible
+    conso_data = {}
+    baseline_power = 0.0  # Consommation à vide
+    
+    if source.is_dir():
+        conso_file = source / "benchmark_conso_Amp.json"
+    else:
+        conso_file = source.parent / "benchmark_conso_Amp.json"
+    
+    if conso_file.exists():
+        with open(conso_file, 'r') as f:
+            conso_list = json.load(f)
+            
+            # D'abord, trouver la consommation à vide (baseline)
+            for item in conso_list:
+                if item.get('model_name') == 'None' or item.get('model_name') is None:
+                    # Consommation idle - utiliser moyenne si disponible, sinon max
+                    baseline_power = item.get('conso_ampere_mean', 
+                                             item.get('conso_ampere_max', 0)) * 5.0
+                    print(f"  📍 Baseline idle: {baseline_power:.2f}W")
+                    break
+            
+            # Ensuite, charger les consommations des modèles et soustraire le baseline
+            for item in conso_list:
+                model_name = item.get('model_name')
+                if model_name and model_name != 'None':
+                    conso_ampere = item.get('conso_ampere_mean', 0)
+                    total_power = conso_ampere * 5.0  # Watts
+                    net_power = max(0, total_power - baseline_power)  # Soustraire baseline
+                    
+                    # Enregistrer avec le nom original ET une version normalisée (- → _)
+                    conso_data[model_name] = net_power
+                    # Ajouter aussi la version avec underscore pour compatibilité
+                    normalized_name = model_name.replace('-', '_')
+                    if normalized_name != model_name:
+                        conso_data[normalized_name] = net_power
+    
+    return df_final, conso_data
+
+
+class PlatformComparator:
     """Compare les résultats entre plateformes"""
     
-    def __init__(self, result_files: list):
+    def __init__(self, platform_sources):
         """
         Args:
-            result_files: Liste des chemins vers les fichiers de résultats JSON
+            platform_sources: Liste des chemins vers fichiers/dossiers de résultats
         """
-        self.result_files = [Path(f) for f in result_files]
-        self.df = self._load_all_results()
         self.output_dir = Path("benchmark_results/comparison")
         self.output_dir.mkdir(exist_ok=True, parents=True)
         
+        # Charger toutes les données
+        all_dfs = []
+        all_conso = {}
+        
+        for source in platform_sources:
+            df, conso = load_aggregated_data(source)
+            if not df.empty:
+                platform_name = df['platform'].iloc[0]
+                
+                # Ajouter consommation au DataFrame
+                df['power_w'] = df['model_name'].apply(lambda x: conso.get(x, 0))
+                df['efficiency'] = df.apply(
+                    lambda row: row['fps_mean'] / row['power_w'] if row['power_w'] > 0 else 0,
+                    axis=1
+                )
+                
+                # Label court pour affichage
+                df['label'] = df['model_name'].apply(
+                    lambda x: x.replace('best-', '').replace('.onnx', '').replace('.tflite', '')
+                              .replace('_edgetpu', '-TPU')[:30]  # Limite 30 chars
+                )
+                
+                all_dfs.append(df)
+        
+        if not all_dfs:
+            raise ValueError("Aucune donnée chargée")
+        
+        # Combiner toutes les plateformes
+        self.df = pd.concat(all_dfs, ignore_index=True)
+        
+        # Couleurs par plateforme
+        self.platforms = self.df['platform'].unique()
+        self.colors = {
+            'raspberry_pi4': '#1f77b4',  # Bleu
+            'raspberry_pi4_coral': '#ff7f0e',  # Orange
+            'pc': '#2ca02c',  # Vert
+        }
+        
         sns.set_style("whitegrid")
-        plt.rcParams['figure.figsize'] = (14, 8)
     
-    def _load_all_results(self) -> pd.DataFrame:
-        """Charge tous les résultats"""
-        all_data = []
-        
-        for file_path in self.result_files:
-            with open(file_path, 'r') as f:
-                data = json.load(f)
-            all_data.extend(data)
-        
-        return pd.DataFrame(all_data)
-    
-    def plot_platform_comparison(self, metric: str, ylabel: str, title: str, 
-                                 filename: str, lower_is_better: bool = True):
-        """
-        Crée un graphique de comparaison entre plateformes
-        
-        Args:
-            metric: Nom de la métrique à comparer
-            ylabel: Label de l'axe Y
-            title: Titre du graphique
-            filename: Nom du fichier de sortie
-            lower_is_better: Si True, les valeurs plus basses sont meilleures
-        """
+    def plot_metric(self, metric, title, ylabel, filename):
+        """Crée un graphique comparatif pour une métrique"""
         fig, ax = plt.subplots(figsize=(16, 8))
         
-        # Grouper par modèle et plateforme
-        platforms = self.df['platform'].unique()
+        x = np.arange(len(self.df))
         
-        # Prendre un sous-ensemble de modèles représentatifs
-        model_types = []
-        for size in [256, 320]:
-            for dtype in ['int8', 'fp16', 'fp32']:
-                for pruned in ['', '_pruned']:
-                    pattern = f"{dtype}_{size}{pruned}"
-                    model_types.append(pattern)
-        
-        # Filtrer les modèles qui existent
-        models_to_plot = []
-        for pattern in model_types:
-            matching = self.df[self.df['model_name'].str.contains(pattern, case=False)]
-            if not matching.empty:
-                models_to_plot.append(matching.iloc[0]['model_name'])
-        
-        # Limiter à 10 modèles max pour la lisibilité
-        models_to_plot = models_to_plot[:10]
-        
-        # Préparer les données
-        x = np.arange(len(models_to_plot))
-        width = 0.8 / len(platforms)
-        
-        for i, platform in enumerate(platforms):
-            values = []
-            for model in models_to_plot:
-                row = self.df[(self.df['model_name'] == model) & 
-                             (self.df['platform'] == platform)]
-                if not row.empty:
-                    values.append(row.iloc[0][metric])
-                else:
-                    values.append(0)
+        for platform in self.platforms:
+            mask = self.df['platform'] == platform
+            indices = np.where(mask)[0]
+            values = self.df.loc[mask, metric].values
             
-            offset = (i - len(platforms)/2 + 0.5) * width
-            ax.bar(x + offset, values, width, label=platform, alpha=0.8)
+            color = self.colors.get(platform, 'gray')
+            ax.bar(indices, values, label=platform, alpha=0.8, color=color)
         
         ax.set_xlabel('Modèle', fontsize=12)
         ax.set_ylabel(ylabel, fontsize=12)
         ax.set_title(title, fontsize=14, fontweight='bold')
         ax.set_xticks(x)
-        ax.set_xticklabels([m.replace('.tflite', '').replace('best-', '') 
-                            for m in models_to_plot], 
-                           rotation=45, ha='right', fontsize=9)
-        ax.legend()
+        ax.set_xticklabels(self.df['label'], rotation=45, ha='right', fontsize=8)
+        ax.legend(fontsize=11)
         ax.grid(axis='y', alpha=0.3)
         
         plt.tight_layout()
         save_path = self.output_dir / filename
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"✓ Graphique sauvegardé: {save_path}")
+        print(f"✓ {filename}")
         plt.close()
     
-    def plot_speedup_heatmap(self):
-        """Crée une heatmap des speedups relatifs"""
-        fig, ax = plt.subplots(figsize=(14, 10))
+    def generate_csv(self):
+        """Génère un CSV récapitulatif"""
+        summary = self.df[['label', 'platform', 'fps_mean', 'inference_time_mean', 
+                          'memory_usage_mean', 'power_w', 'efficiency']].copy()
         
-        # Calculer les speedups par rapport au PC
-        platforms = sorted(self.df['platform'].unique())
+        summary.columns = ['Modèle', 'Plateforme', 'FPS', 'Inférence (ms)', 
+                           'Mémoire (MB)', 'Puissance (W)', 'Efficacité (FPS/W)']
         
-        # Prendre les modèles communs à toutes les plateformes
-        common_models = set(self.df[self.df['platform'] == platforms[0]]['model_name'])
-        for platform in platforms[1:]:
-            common_models &= set(self.df[self.df['platform'] == platform]['model_name'])
+        summary = summary.round({
+            'FPS': 1,
+            'Inférence (ms)': 1,
+            'Mémoire (MB)': 0,
+            'Puissance (W)': 2,
+            'Efficacité (FPS/W)': 1
+        })
         
-        common_models = sorted(list(common_models))[:15]  # Limiter à 15 modèles
-        
-        # Créer la matrice de speedup
-        speedup_matrix = []
-        
-        for model in common_models:
-            row = []
-            baseline = None
-            
-            for platform in platforms:
-                result = self.df[(self.df['model_name'] == model) & 
-                               (self.df['platform'] == platform)]
-                
-                if not result.empty:
-                    fps = result.iloc[0]['fps_mean']
-                    
-                    if baseline is None:
-                        baseline = fps
-                        row.append(1.0)  # Baseline = 1.0
-                    else:
-                        speedup = fps / baseline if baseline > 0 else 0
-                        row.append(speedup)
-                else:
-                    row.append(0)
-            
-            speedup_matrix.append(row)
-        
-        # Créer la heatmap
-        speedup_df = pd.DataFrame(speedup_matrix, 
-                                 index=[m.replace('.tflite', '').replace('best-', '') 
-                                       for m in common_models],
-                                 columns=platforms)
-        
-        sns.heatmap(speedup_df, annot=True, fmt='.2f', cmap='RdYlGn', 
-                   center=1.0, ax=ax, cbar_kws={'label': 'Speedup relatif'})
-        
-        ax.set_title('Speedup FPS relatif (par rapport à la première plateforme)', 
-                    fontsize=14, fontweight='bold')
-        ax.set_xlabel('Plateforme', fontsize=12)
-        ax.set_ylabel('Modèle', fontsize=12)
-        
-        plt.tight_layout()
-        save_path = self.output_dir / "speedup_heatmap.png"
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"✓ Graphique sauvegardé: {save_path}")
-        plt.close()
-    
-    def plot_efficiency_comparison(self):
-        """Compare l'efficacité énergétique (FPS / Watt si disponible)"""
-        fig, ax = plt.subplots(figsize=(14, 8))
-        
-        platforms = self.df['platform'].unique()
-        colors = plt.cm.Set3(np.linspace(0, 1, len(platforms)))
-        
-        for i, platform in enumerate(platforms):
-            platform_data = self.df[self.df['platform'] == platform]
-            
-            ax.scatter(platform_data['memory_usage_mean'], 
-                      platform_data['fps_mean'],
-                      s=200, alpha=0.6, c=[colors[i]], 
-                      label=platform, edgecolors='black', linewidth=1)
-        
-        ax.set_xlabel('Utilisation mémoire moyenne (MB)', fontsize=12)
-        ax.set_ylabel('FPS moyen', fontsize=12)
-        ax.set_title('Efficacité: FPS vs Mémoire (par plateforme)', 
-                    fontsize=14, fontweight='bold')
-        ax.legend()
-        ax.grid(alpha=0.3)
-        
-        plt.tight_layout()
-        save_path = self.output_dir / "efficiency_comparison.png"
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"✓ Graphique sauvegardé: {save_path}")
-        plt.close()
-    
-    def generate_comparison_table(self):
-        """Génère un tableau de comparaison"""
-        # Pour chaque modèle, comparer les métriques entre plateformes
-        models = self.df['model_name'].unique()
-        platforms = self.df['platform'].unique()
-        
-        comparison_data = []
-        
-        for model in models:
-            row = {'model': model.replace('.tflite', '').replace('best-', '')}
-            
-            for platform in platforms:
-                result = self.df[(self.df['model_name'] == model) & 
-                               (self.df['platform'] == platform)]
-                
-                if not result.empty:
-                    r = result.iloc[0]
-                    row[f'{platform}_fps'] = f"{r['fps_mean']:.1f}"
-                    row[f'{platform}_inference'] = f"{r['inference_time_mean']:.1f}"
-                    row[f'{platform}_memory'] = f"{r['memory_usage_mean']:.0f}"
-                else:
-                    row[f'{platform}_fps'] = "N/A"
-                    row[f'{platform}_inference'] = "N/A"
-                    row[f'{platform}_memory'] = "N/A"
-            
-            comparison_data.append(row)
-        
-        # Sauvegarder en CSV
-        df_comparison = pd.DataFrame(comparison_data)
         csv_path = self.output_dir / "platform_comparison.csv"
-        df_comparison.to_csv(csv_path, index=False)
-        print(f"✓ Tableau de comparaison sauvegardé: {csv_path}")
+        summary.to_csv(csv_path, index=False)
+        print(f"✓ platform_comparison.csv")
         
-        return df_comparison
-    
-    def generate_html_report(self):
-        """Génère un rapport HTML de comparaison"""
-        platforms = ', '.join(self.df['platform'].unique())
-        
-        html_content = f"""
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Comparaison Multi-Plateformes</title>
-    <style>
-        body {{
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            max-width: 1600px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: #f5f5f5;
-        }}
-        h1 {{
-            color: #333;
-            border-bottom: 3px solid #4CAF50;
-            padding-bottom: 10px;
-        }}
-        h2 {{
-            color: #555;
-            margin-top: 30px;
-        }}
-        .summary {{
-            background-color: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            margin-bottom: 20px;
-        }}
-        .plot {{
-            margin: 20px 0;
-            text-align: center;
-            background-color: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }}
-        .plot img {{
-            max-width: 100%;
-            border-radius: 8px;
-        }}
-        table {{
-            width: 100%;
-            border-collapse: collapse;
-            background-color: white;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            margin-bottom: 30px;
-            font-size: 0.9em;
-        }}
-        th, td {{
-            padding: 10px;
-            text-align: left;
-            border-bottom: 1px solid #ddd;
-        }}
-        th {{
-            background-color: #4CAF50;
-            color: white;
-            font-weight: bold;
-        }}
-        tr:hover {{
-            background-color: #f5f5f5;
-        }}
-    </style>
-</head>
-<body>
-    <h1>🔄 Comparaison Multi-Plateformes</h1>
-    
-    <div class="summary">
-        <h2>Plateformes comparées</h2>
-        <p><strong>{platforms}</strong></p>
-        <p>Nombre total de résultats: {len(self.df)}</p>
-    </div>
-    
-    <h2>📊 Graphiques de comparaison</h2>
-    
-    <div class="plot">
-        <h3>Temps d'inférence par plateforme</h3>
-        <img src="inference_comparison.png" alt="Inference comparison">
-    </div>
-    
-    <div class="plot">
-        <h3>FPS par plateforme</h3>
-        <img src="fps_comparison.png" alt="FPS comparison">
-    </div>
-    
-    <div class="plot">
-        <h3>Speedup relatif</h3>
-        <img src="speedup_heatmap.png" alt="Speedup heatmap">
-    </div>
-    
-    <div class="plot">
-        <h3>Efficacité (FPS vs Mémoire)</h3>
-        <img src="efficiency_comparison.png" alt="Efficiency comparison">
-    </div>
-    
-    <footer style="margin-top: 50px; text-align: center; color: #999;">
-        <p>Généré automatiquement par compare_platforms.py</p>
-    </footer>
-</body>
-</html>
-"""
-        
-        report_path = self.output_dir / "platform_comparison_report.html"
-        with open(report_path, 'w', encoding='utf-8') as f:
-            f.write(html_content)
-        
-        print(f"✓ Rapport HTML généré: {report_path}")
+        return summary
     
     def compare(self):
         """Lance toutes les comparaisons"""
         print(f"\n{'='*60}")
-        print(f"Comparaison de {len(self.result_files)} fichiers de résultats")
-        print(f"Plateformes: {', '.join(self.df['platform'].unique())}")
+        print(f"Comparaison de {len(self.platforms)} plateforme(s)")
+        print(f"Plateformes: {', '.join(self.platforms)}")
+        print(f"Total modèles: {len(self.df)}")
         print(f"{'='*60}\n")
         
-        print("Génération des graphiques de comparaison...")
+        print("🎨 Génération des graphiques...")
         
-        self.plot_platform_comparison(
-            'inference_time_mean', 
-            'Temps d\'inférence (ms)',
-            'Comparaison des temps d\'inférence entre plateformes',
-            'inference_comparison.png'
-        )
+        self.plot_metric('inference_time_mean', 
+                        'Comparaison des Temps d\'Inférence', 
+                        'Temps (ms)',
+                        'inference_comparison.png')
         
-        self.plot_platform_comparison(
-            'fps_mean', 
-            'FPS',
-            'Comparaison des FPS entre plateformes',
-            'fps_comparison.png',
-            lower_is_better=False
-        )
+        self.plot_metric('fps_mean',
+                        'Comparaison des FPS',
+                        'FPS',
+                        'fps_comparison.png')
         
-        self.plot_speedup_heatmap()
-        self.plot_efficiency_comparison()
+        self.plot_metric('memory_usage_mean',
+                        'Comparaison de la Mémoire',
+                        'Mémoire (MB)',
+                        'memory_comparison.png')
         
-        print("\nGénération du tableau de comparaison...")
-        self.generate_comparison_table()
+        self.plot_metric('power_w',
+                        'Comparaison de la Consommation Électrique',
+                        'Puissance (Watts)',
+                        'power_comparison.png')
         
-        print("\nGénération du rapport HTML...")
-        self.generate_html_report()
+        self.plot_metric('efficiency',
+                        'Comparaison de l\'Efficacité Énergétique',
+                        'FPS / Watt',
+                        'efficiency_comparison.png')
+        
+        print("\n📋 Génération du CSV...")
+        summary = self.generate_csv()
         
         print(f"\n{'='*60}")
-        print(f"Comparaison terminée!")
+        print("✅ Comparaison terminée!")
         print(f"Résultats dans: {self.output_dir}")
         print(f"{'='*60}")
+        
+        print("\n📊 Résumé (10 premiers modèles):")
+        print(summary.head(10).to_string(index=False))
 
 
 def main():
     parser = argparse.ArgumentParser(
         description="Compare les résultats de benchmarking entre plateformes"
     )
-    parser.add_argument('results', nargs='+', 
-                       help='Fichiers JSON de résultats à comparer')
+    parser.add_argument('results', nargs='+',
+                       help='Fichiers JSON ou dossiers de résultats à comparer')
     
     args = parser.parse_args()
     
-    if len(args.results) < 2:
-        print("❌ Au moins 2 fichiers de résultats sont nécessaires pour la comparaison")
-        return
-    
-    comparator = MultiPlatformComparator(args.results)
+    comparator = PlatformComparator(args.results)
     comparator.compare()
 
 
