@@ -21,8 +21,9 @@ def generate_launch_description():
     )
 
     use_sim_time = LaunchConfiguration('use_sim_time', default='true')
-    x_pose = LaunchConfiguration('x_pose', default='2.0')
-    y_pose = LaunchConfiguration('y_pose', default='0.5')
+    x_pose = LaunchConfiguration('x_pose', default='-2.5')
+    y_pose = LaunchConfiguration('y_pose', default='3.5')
+    yaw_pose = LaunchConfiguration('yaw', default='2.2')
 
     world = os.path.join(
         get_package_share_directory('turtlebot3_gazebo'),
@@ -60,7 +61,8 @@ def generate_launch_description():
         ),
         launch_arguments={
             'x_pose': x_pose,
-            'y_pose': y_pose
+            'y_pose': y_pose,
+            'yaw': yaw_pose
         }.items()
     )
 
@@ -109,8 +111,8 @@ def generate_launch_description():
     ld.add_action(robot_state_publisher_cmd)
     ld.add_action(spawn_turtlebot_cmd)
     ld.add_action(rviz_cmd)
-    # ld.add_action(explorator_package)
-    # ld.add_action(orchestrator_package)
+    ld.add_action(explorator_package)
+    ld.add_action(orchestrator_package)
     ld.add_action(ball_detector_cmd)
 
     # print(get_package_share_directory('turtlebot3_gazebo'))

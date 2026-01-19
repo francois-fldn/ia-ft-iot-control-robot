@@ -12,6 +12,7 @@ STATE_STOP = 0
 STATE_ROTATE = 1
 STATE_WANDERER = 2
 STATE_LOCK_IN = 3
+STATE_GO = 4
 
 class SearchBallBehavior(Node):
     def __init__(self):
@@ -31,11 +32,11 @@ class SearchBallBehavior(Node):
         self.aligned_with_ball = False
         # self.initiated_rotation = False
         self.rotating = False
-        self.omega = 0.0
+        self.omega = None
 
         self.near_ball = False
         self.deplacing = False
-        self.vitesse = 0.0
+        self.vitesse = None
 
         self.logger = logging.getLogger("EXPLORATOR")
         logging.basicConfig(
@@ -46,7 +47,7 @@ class SearchBallBehavior(Node):
         self.timer = self.create_timer(0.1, self.control_loop)
     
     def state_to_str(self,state_int):
-        states = ['STATE_STOP', 'STATE_ROTATE', 'STATE_WANDERER', 'STATE_LOCK_IN']
+        states = ['STATE_STOP', 'STATE_ROTATE', 'STATE_WANDERER', 'STATE_LOCK_IN', 'STATE_GO']
         return states[state_int]
 
     def state_callback(self,msg):
@@ -89,10 +90,42 @@ class SearchBallBehavior(Node):
             else:
                 self.log_state = 3
                 msg.linear.x = 0.2
-                msg.angular.z = random.uniform(-0.5, 0.5)
+                msg.angular.z = 0.0
         
         elif (self.state == STATE_LOCK_IN) :
             # premiere etape, s'aligner avec la balle
+            self.log_state = 4
+
+            # if (not(self.aligned_with_ball) or not(self.near_ball)):
+            #     if (self.rotating): msg.angular.z = self.omega
+            #     if (self.deplacing): msg.linear.x = self.vitesse
+
+            #     # les deux self.omega et self.vitesse devraient etre None au meme moment
+
+            #     if (self.omega == None):
+            #         angle = math.atan2(self.ball_position[1], self.ball_position[0])
+            #         self.omega = angle / 8
+            #         msg.angular.z = self.omega
+            #         self.rotating = True
+                
+            #     if (self.vitesse == None):
+            #         distance = math.sqrt(self.ball_position[0]**2 + self.ball_position[1]**2)
+            #         self.vitesse = distance / 8
+            #         msg.linear.x = self.vitesse
+            #         self.deplacing = True
+            #         self.start_timer = datetime.now()
+                
+            #     delta = datetime.now() - self.start_timer
+            #     if (delta.seconds >= 10):
+            #         self.aligned_with_ball = True
+            #         self.rotating = False
+            #         self.near_ball = True
+            #         self.deplacing = False
+            #         msg.linear.x = 0.0
+            #         msg.angular.z = 0.0
+            #         self.omega = None
+            #         self.vitesse = None
+
 
             if (not(self.aligned_with_ball)):
                 if (self.rotating): msg.angular.z = self.omega
@@ -125,6 +158,10 @@ class SearchBallBehavior(Node):
                     self.deplacing = False
                     self.aligned_with_ball = False
 
+        elif (self.state == STATE_GO):
+            self.log_state = 6
+            msg.linear.x = 0.3
+        
         if prev_log != self.log_state : self.logger.info(f'Applique la vitesse x = {msg.linear.x}, z = {msg.angular.z}')
         self.cmd_publisher.publish(msg)
 

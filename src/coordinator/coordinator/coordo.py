@@ -9,12 +9,11 @@ STATE_STOP = 0
 STATE_ROTATE = 1
 STATE_WANDERER = 2
 STATE_LOCK_IN = 3
+STATE_GO = 4
 
-def get_str_state(state):
-    if state == STATE_STOP: return "STOP"
-    if state == STATE_ROTATE: return "ROTATE"
-    if state == STATE_WANDERER: return "WANDERER"
-    if state == STATE_LOCK_IN: return "LOCK_IN"
+def state_to_str(state_int):
+    states = ['STATE_STOP', 'STATE_ROTATE', 'STATE_WANDERER', 'STATE_LOCK_IN', 'STATE_GO']
+    return states[state_int]
 
 class Coordo(Node):
     def __init__(self):
@@ -30,7 +29,8 @@ class Coordo(Node):
 
         self.start_timer = datetime.now()
 
-        self.state = STATE_ROTATE
+        self.state = STATE_STOP
+        self.goal_achieved = False
 
         msg = UInt8()
         msg.data = self.state
@@ -42,27 +42,25 @@ class Coordo(Node):
             format = "[ORCHESTRATOR] [%(levelname)s] %(message)s"
             )
         
-        self.logger.info(f'Démarrage avec {get_str_state(self.state)}')
+        self.logger.info(f'Démarrage avec {state_to_str(self.state)}')
 
     def ball_scan_callback(self, msg):
         prev_state = self.state
 
-        if (msg.point.x == 1000):
+        if (self.goal_achieved): 
             return
 
-
-        # if (msg.point.x == 1000): 
-        #     if (self.state == STATE_LOCK_IN): self.state = STATE_WANDERER
-        #     if prev_state != self.state : print(f"[ORCHESTRATOR] [INFO] Changement d\'état STATE_WANDERER")
-        #     self.start_timer = datetime.now()
+        if (msg.point.x == 1000):
+            return
 
         if (msg.point.x != 1000): 
             # print(f"coordonnees recues : {msg.point.x}, {msg.point.y}, {msg.point.z}")
             self.state = STATE_LOCK_IN
             if (msg.point.x <= 0.28):
-                self.state = STATE_STOP
+                self.state = STATE_GO
+                self.start_timer = datetime.now()
 
-        if prev_state != self.state : self.logger.info(f'Changement d\'état {get_str_state(self.state)}')
+        if prev_state != self.state : self.logger.info(f'Changement d\'état {state_to_str(self.state)}')
         
         msg_state = UInt8()
         msg_state.data = self.state
@@ -77,6 +75,19 @@ class Coordo(Node):
     def send_state(self):
         msg = UInt8()
 
+        if (self.state == STATE_STOP):
+            if (self.goal_achieved): return 
+            now = datetime.now()
+            delta = now - self.start_timer
+
+            if delta.seconds >= 10: # une petite attente le temps que la simu se lance
+                self.state = STATE_ROTATE
+                msg.data = self.state
+                self.state_publisher.publish(msg)
+                self.logger.info(f'Changement d\'état {state_to_str(self.state)}')
+                self.start_timer = datetime.now()
+
+
         if (self.state == STATE_ROTATE):
             now = datetime.now()
             delta = now - self.start_timer
@@ -85,8 +96,9 @@ class Coordo(Node):
                 self.state = STATE_WANDERER
                 msg.data = self.state
                 self.state_publisher.publish(msg)
-                self.logger.info(f'Changement d\'état {get_str_state(self.state)}')
+                self.logger.info(f'Changement d\'état {state_to_str(self.state)}')
                 self.start_timer = datetime.now()
+
 
         elif (self.state == STATE_WANDERER):
             now = datetime.now()
@@ -96,10 +108,22 @@ class Coordo(Node):
                 self.state = STATE_ROTATE
                 msg.data = self.state
                 self.state_publisher.publish(msg)
-                self.logger.info(f'Changement d\'état {get_str_state(self.state)}')
+                self.logger.info(f'Changement d\'état {state_to_str(self.state)}')
                 self.start_timer = datetime.now()
-        
+
+
         elif (self.state == STATE_LOCK_IN): pass
+
+        elif (self.state == STATE_GO):
+            now = datetime.now()
+            delta = now - self.start_timer
+
+            if delta.seconds >= 2:
+                self.state = STATE_STOP
+                msg.data = self.state
+                self.state_publisher.publish(msg)
+                self.logger.info(f'Changement d\'état {state_to_str(self.state)}')
+                self.goal_achieved = True
 
         # msg = String()
         # msg.data = f'Hello, world! {self.i}'
