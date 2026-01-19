@@ -1,0 +1,55 @@
+# Configuration du benchmarking des modèles YOLO
+# Version finale avec dataset RealSense
+
+# Dossiers contenant les modèles
+model_directories:
+  - path: "modeles_yolo/256"
+    input_size: 256
+    type: "standard"
+  - path: "modeles_yolo/320"
+    input_size: 320
+    type: "standard"
+  - path: "modeles_yolo/256_pruned"
+    input_size: 256
+    type: "pruned"
+  - path: "modeles_yolo/320_pruned"
+    input_size: 320
+    type: "pruned"
+
+# Plateformes de test
+platforms:
+  pc:
+    name: "PC"
+    use_edgetpu: false
+    supports_onnx: true
+    
+  raspberry_pi4:
+    name: "Raspberry Pi 4"
+    use_edgetpu: false
+    supports_onnx: true  # ONNX avec XNNPACK
+    
+  raspberry_pi4_coral:
+    name: "Raspberry Pi 4 + Coral TPU"
+    use_edgetpu: true
+    supports_onnx: false  # Seulement TFLite EdgeTPU
+
+# Paramètres de benchmark
+benchmark:
+  warmup_iterations: 10  # Nombre d'itérations de chauffe
+  
+  # Seuil de confiance pour les détections
+  confidence_threshold: 0.60
+
+# Sortie des résultats
+output:
+  directory: "benchmark_results"
+  formats:
+    - csv
+    - json
+  plots:
+    - inference_time_comparison
+    - fps_comparison
+    - memory_usage
+    - cpu_usage
+    - temperature_over_time
+    - pipeline_breakdown
