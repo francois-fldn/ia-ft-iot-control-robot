@@ -17,13 +17,6 @@ def preview_dataset(dataset_path: str, start_frame: int = 0, fps: int = 10,
                    detect_model: str = None, conf_threshold: float = 0.3):
     """
     Prévisualise un dataset RealSense
-    
-    Args:
-        dataset_path: Chemin vers le fichier .pkl.gz
-        start_frame: Frame de départ
-        fps: Vitesse de lecture (frames par seconde)
-        detect_model: Chemin vers un modèle YOLO pour afficher les détections (optionnel)
-        conf_threshold: Seuil de confiance pour les détections
     """
     print(f"\nChargement du dataset: {dataset_path}")
     
@@ -45,7 +38,6 @@ def preview_dataset(dataset_path: str, start_frame: int = 0, fps: int = 10,
     total_frames = len(frames)
     camera_info = dataset['camera_info']
     
-    # Charger le détecteur si demandé
     detector = None
     if detect_model:
         model_path = Path(detect_model)
@@ -154,7 +146,6 @@ def preview_dataset(dataset_path: str, start_frame: int = 0, fps: int = 10,
         combined = np.hstack([rgb_display, depth_display])
         cv2.imshow('Dataset Preview - RGB (gauche) | Depth (droite)', combined)
         
-        # Gestion des touches
         key = cv2.waitKey(delay if not paused else 0) & 0xFF
         
         if key == ord('q') or key == 27:  # Q ou ESC
@@ -197,8 +188,8 @@ def main():
                        help='Vitesse de lecture en FPS (défaut: 10)')
     parser.add_argument('--detect', type=str, default=None,
                        help='Chemin vers un modèle YOLO pour afficher les détections (ex: modeles_yolo/256/best_int8_256.onnx)')
-    parser.add_argument('--conf', type=float, default=0.3,
-                       help='Seuil de confiance pour les détections (défaut: 0.3)')
+    parser.add_argument('--conf', type=float, default=0.6,
+                       help='Seuil de confiance pour les détections (défaut: 0.6)')
     
     args = parser.parse_args()
     

@@ -14,7 +14,7 @@ import numpy as np
 
 
 def load_aggregated_data(directory):
-    """Charge et agrège les données d'un dossier/fichier"""
+    # Charge et agrège les données d'un dossier/fichier
     source = Path(directory)
     all_data = []
     
@@ -46,7 +46,6 @@ def load_aggregated_data(directory):
     meta_cols_existing = [c for c in meta_cols if c in df.columns]
     df_meta = df[meta_cols_existing].drop_duplicates(subset=['model_name'])
     
-    # Merge
     df_final = pd.merge(df_meta, df_agg, on='model_name', how='inner')
     
     # Charger consommation si disponible
@@ -62,7 +61,7 @@ def load_aggregated_data(directory):
         with open(conso_file, 'r') as f:
             conso_list = json.load(f)
             
-            # D'abord, trouver la consommation à vide (baseline)
+            # Trouver la consommation à vide (baseline)
             for item in conso_list:
                 if item.get('model_name') == 'None' or item.get('model_name') is None:
                     # Consommation idle - utiliser moyenne si disponible, sinon max
@@ -71,7 +70,7 @@ def load_aggregated_data(directory):
                     print(f"  Baseline idle: {baseline_power:.2f}W")
                     break
             
-            # Ensuite, charger les consommations des modèles et soustraire le baseline
+            # Charger les consommations des modèles et soustraire le baseline
             for item in conso_list:
                 model_name = item.get('model_name')
                 if model_name and model_name != 'None':
@@ -90,13 +89,10 @@ def load_aggregated_data(directory):
 
 
 class PlatformComparator:
-    """Compare les résultats entre plateformes"""
+    # Compare les résultats entre plateformes
     
     def __init__(self, platform_sources):
-        """
-        Args:
-            platform_sources: Liste des chemins vers fichiers/dossiers de résultats
-        """
+
         self.output_dir = Path("benchmark_results/comparison")
         self.output_dir.mkdir(exist_ok=True, parents=True)
         
@@ -116,10 +112,9 @@ class PlatformComparator:
                     axis=1
                 )
                 
-                # Label court pour affichage
                 df['label'] = df['model_name'].apply(
                     lambda x: x.replace('best-', '').replace('.onnx', '').replace('.tflite', '')
-                              .replace('_edgetpu', '-TPU')[:30]  # Limite 30 chars
+                              .replace('_edgetpu', '-TPU')[:30]  
                 )
                 
                 all_dfs.append(df)
@@ -142,7 +137,7 @@ class PlatformComparator:
         sns.set_style("whitegrid")
     
     def plot_metric(self, metric, title, ylabel, filename):
-        """Crée un graphique comparatif pour une métrique"""
+        # Crée un graphique comparatif pour une métrique
         fig, ax = plt.subplots(figsize=(16, 8))
         
         x = np.arange(len(self.df))
@@ -170,7 +165,7 @@ class PlatformComparator:
         plt.close()
     
     def generate_csv(self):
-        """Génère un CSV récapitulatif"""
+        # Génère un CSV récapitulatif
         summary = self.df[['label', 'platform', 'fps_mean', 'inference_time_mean', 
                           'memory_usage_mean', 'power_w', 'efficiency']].copy()
         
@@ -192,7 +187,7 @@ class PlatformComparator:
         return summary
     
     def compare(self):
-        """Lance toutes les comparaisons"""
+        # Lance toutes les comparaisons
         print(f"\n{'='*60}")
         print(f"Comparaison de {len(self.platforms)} plateforme(s)")
         print(f"Plateformes: {', '.join(self.platforms)}")

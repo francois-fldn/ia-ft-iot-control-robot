@@ -10,15 +10,10 @@ import numpy as np
 
 
 class RealSenseRecorder(Node):
-    """Enregistre les données RealSense dans un fichier"""
+    # Enregistre les données RealSense dans un fichier
     
     def __init__(self, output_file: str, max_frames: int = 300, use_realsense_topics: bool = True):
-        """
-        Args:
-            output_file: Fichier de sortie (.pkl.gz)
-            max_frames: Nombre maximum de frames à enregistrer
-            use_realsense_topics: True pour topics RealSense, False pour Gazebo
-        """
+
         super().__init__('realsense_recorder')
         
         self.output_file = Path(output_file)
@@ -55,7 +50,7 @@ class RealSenseRecorder(Node):
         self.get_logger().info(f"Sortie: {self.output_file}")
     
     def callback_info(self, msg):
-        """Stocke les infos caméra (une seule fois)"""
+        # Stocke les infos caméra (une seule fois)
         if self.camera_info is None:
             self.camera_info = {
                 'width': msg.width,
@@ -68,14 +63,14 @@ class RealSenseRecorder(Node):
             self.get_logger().info(f"CameraInfo capture: {msg.width}x{msg.height}")
     
     def callback_depth(self, msg):
-        """Stocke la dernière image de profondeur"""
+        # Stocke la dernière image de profondeur
         try:
             self.latest_depth = self.bridge.imgmsg_to_cv2(msg, desired_encoding="passthrough")
         except Exception as e:
             self.get_logger().error(f"Erreur depth: {e}")
     
     def callback_rgb(self, msg):
-        """Enregistre une frame complète (RGB + Depth)"""
+        # Enregistre une frame complète (RGB + Depth)
         if self.frame_count >= self.max_frames:
             if self.frame_count == self.max_frames:
                 self.get_logger().info("Nombre max de frames atteint - Sauvegarde...")
@@ -108,7 +103,7 @@ class RealSenseRecorder(Node):
             self.get_logger().info(f"{self.frame_count}/{self.max_frames} frames enregistrees")
     
     def save_dataset(self):
-        """Sauvegarde le dataset dans un fichier compressé"""
+        # Sauvegarde le dataset dans un fichier compressé
         if not self.frames:
             self.get_logger().info("Aucune frame a sauvegarder!")
             return

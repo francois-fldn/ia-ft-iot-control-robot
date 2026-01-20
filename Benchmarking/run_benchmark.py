@@ -22,7 +22,7 @@ from ball_detector import BallDetectorBenchmark, get_temperature
 
 
 class BenchmarkRunner:
-    """Gestionnaire de benchmarking avec données RealSense"""
+    # Gestionnaire de benchmarking avec données RealSense
     
     def __init__(self, config_path: str = "benchmark_config.yaml"):
         self.config_path = config_path
@@ -37,12 +37,12 @@ class BenchmarkRunner:
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
     def _load_config(self) -> Dict:
-        """Charge la configuration"""
+        # Charge la configuration
         with open(self.config_path, 'r') as f:
             return yaml.safe_load(f)
     
     def load_dataset(self, dataset_path: str) -> Dict:
-        """Charge le dataset RealSense"""
+        # Charge le dataset RealSense
         print(f"\nChargement du dataset: {dataset_path}")
         
         with gzip.open(dataset_path, 'rb') as f:
@@ -56,7 +56,7 @@ class BenchmarkRunner:
         return dataset
     
     def _get_platform_info(self) -> str:
-        """Détecte la plateforme actuelle"""
+        # Détecte la plateforme actuelle
         import platform
         
         if os.path.exists('/proc/device-tree/model'):
@@ -75,7 +75,7 @@ class BenchmarkRunner:
         return "pc"
     
     def _discover_models(self) -> List[Dict]:
-        """Découvre tous les modèles à tester"""
+        # Découvre tous les modèles à tester
         models = []
         base_path = Path(os.path.dirname(self.config_path))
         
@@ -85,7 +85,7 @@ class BenchmarkRunner:
             if not dir_path.exists():
                 continue
             
-            # TFLite models
+            #  TFLite models
             for tflite_file in dir_path.glob("*.tflite"):
                 is_edgetpu = "edgetpu" in tflite_file.name.lower()
                 
@@ -114,7 +114,7 @@ class BenchmarkRunner:
         return models
     
     def _filter_models_for_platform(self, models: List[Dict], platform: str) -> List[Dict]:
-        """Filtre les modèles compatibles avec la plateforme"""
+        # Filtre les modèles compatibles avec la plateforme
         platform_config = self.config['platforms'].get(platform, {})
         use_edgetpu = platform_config.get('use_edgetpu', False)
         
@@ -132,7 +132,7 @@ class BenchmarkRunner:
         return filtered
     
     def benchmark_model(self, model_info: Dict, dataset: Dict, platform: str) -> Dict:
-        """Benchmark un modèle avec le dataset"""
+        # Benchmark un modèle avec le dataset
         print(f"\n{'='*70}")
         print(f"Modèle: {model_info['name']}")
         print(f"Runtime: {model_info['runtime'].upper()}")
@@ -208,7 +208,7 @@ class BenchmarkRunner:
         return result
     
     def _print_summary(self, result: Dict, summary: Dict):
-        """Affiche un résumé des résultats"""
+        # Affiche un résumé des résultats
         print(f"\n{'─'*70}")
         print(f"RÉSULTATS:")
         print(f"{'─'*70}")
@@ -227,8 +227,7 @@ class BenchmarkRunner:
         print(f"{'─'*70}")
     
     def run(self, dataset_path: str, platform: str = None):
-        """Lance le benchmarking"""
-        # Charger le dataset
+        # Lance le benchmarking
         dataset = self.load_dataset(dataset_path)
         
         # Détecter la plateforme
@@ -255,7 +254,6 @@ class BenchmarkRunner:
             if result:
                 self.results.append(result)
         
-        # Sauvegarder
         self.save_results()
         
         print(f"\n{'='*70}")
@@ -264,7 +262,7 @@ class BenchmarkRunner:
         print(f"{'='*70}")
     
     def save_results(self):
-        """Sauvegarde les résultats"""
+        # Sauvegarde les résultats
         if not self.results:
             return
         

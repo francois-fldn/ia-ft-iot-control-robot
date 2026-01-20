@@ -1,6 +1,7 @@
 # Benchmarking YOLO - Detection de Balle
 
 Système de benchmarking pour modèles YOLO (TFLite/ONNX) sur PC, Raspberry Pi 4, et Raspberry Pi 4 + Coral TPU.
+Python <= 3.10 est nécessaire pour le Coral TPU.
 
 ## Demarrage Rapide
 
@@ -29,13 +30,7 @@ python3 preview_dataset.py tennis_ball_dataset.pkl.gz
 
 ```bash
 # PC ou Raspberry Pi 4
-pip install opencv-python tqdm psutil pandas matplotlib seaborn pyyaml
-pip install onnxruntime  # Pour modèles ONNX
-
-# NVIDIA Jetson Orin
-# Assurez-vous d'avoir JetPack installé
-pip install onnxruntime-gpu
-# Note: TensorFlow/TFLite peut nécessiter une installation spécifique via NVIDIA
+pip install -r requirements.txt
 
 # Coral TPU (Raspberry Pi 4 uniquement)
 echo "deb https://packages.cloud.google.com/apt coral-edgetpu-stable main" | sudo tee /etc/apt/sources.list.d/coral-edgetpu.list
@@ -45,18 +40,15 @@ sudo apt-get update && sudo apt-get install libedgetpu1-std python3-pycoral
 
 ### 3. Lancer le benchmark
 
-```bash
-# Auto-détection de la plateforme
-python3 run_benchmark.py tennis_ball_dataset.pkl.gz
+- 24 modèles pour Raspberry Pi 4, PC et Jetson
+- 4 modèles pour Coral TPU
 
-# Ou spécifier la plateforme
+```bash
 python3 run_benchmark.py tennis_ball_dataset.pkl.gz --platform pc
 python3 run_benchmark.py tennis_ball_dataset.pkl.gz --platform raspberry_pi4
 python3 run_benchmark.py tennis_ball_dataset.pkl.gz --platform raspberry_pi4_coral
 python3 run_benchmark.py tennis_ball_dataset.pkl.gz --platform jetson_orin
 ```
-
-**Durée estimée:** PC: 15-30 min | RPi4: 30-60 min | RPi4+Coral: 15-20 min
 
 ### 4. Analyser les resultats
 
@@ -64,9 +56,6 @@ python3 run_benchmark.py tennis_ball_dataset.pkl.gz --platform jetson_orin
 ```bash
 # Analyse d'un seul fichier JSON
 python3 analyze_results.py benchmark_results/benchmark_results_TIMESTAMP.json
-
-# Ouvrir le rapport HTML
-open benchmark_results/benchmark_report_TIMESTAMP.html
 ```
 
 #### Analyse avec agregation (plusieurs repetitions)
@@ -81,7 +70,6 @@ done
 # 2. Analyser le dossier entier (calcule automatiquement moyenne + écart-type)
 python3 analyze_results.py benchmark_results/benchmark_results_PLATFORM/
 
-# Résultat : Graphiques avec barres d'erreur montrant la stabilité
 ```
 
 **Avantages de l'agrégation :**
@@ -107,15 +95,13 @@ Exemple de structure attendue pour `benchmark_conso_Amp.json` :
 
 **Graphiques générés :**
 - `power_consumption.png` : Consommation en Watts par modèle
-- `efficiency_fps_per_watt.png` : Efficacité (FPS/W) - plus c'est élevé, mieux c'est !
+- `efficiency_fps_per_watt.png` : Efficacité (FPS/W)
 
 #### Comparer plusieurs plateformes
 ```bash
 # Analyser et comparer 2 plateformes
 python3 compare_platforms.py benchmark_results/benchmark_results_pi4/ benchmark_results/benchmark_results_coral/
 
-# Résultat : Rapport HTML dans benchmark_results/comparison/
-```
 
 **Graphiques de comparaison générés :**
 - Temps d'inférence par plateforme
@@ -170,99 +156,23 @@ DETEC_BALL_PROJET/
 **Resultats generes** (dans `benchmark_results/`):
 - `*.json` : Donnees brutes
 - `*.csv` : Tableau Excel
-- `*.html` : Rapport interactif avec graphiques
+- `*.png` : Graphiques
 
----
-
-## Workflow Complet
-
-```bash
-# 1. Enregistrer le dataset (sur machine avec RealSense)
-python3 record_realsense.py --output tennis_dataset.pkl.gz --frames 300
-
-# 2. Benchmarker sur PC
-python3 run_benchmark.py tennis_dataset.pkl.gz --platform pc
-
-# 3. Transférer le dataset sur Raspberry Pi
-scp tennis_ball_dataset.pkl.gz pi@raspberrypi:~/
-
-# 4. Benchmarker sur RPi4
-ssh pi@raspberrypi
-python3 run_benchmark.py tennis_ball_dataset.pkl.gz --platform raspberry_pi4
-
-# 5. Benchmarker sur RPi4 + Coral (si disponible)
-python3 run_benchmark.py tennis_ball_dataset.pkl.gz --platform raspberry_pi4_coral
-
-# 6. Récupérer tous les JSON et comparer
-python3 compare_platforms.py results_*.json
-```
-
----
-
-## Configuration
+## Configuration 
 
 Éditez `benchmark_config.yaml` pour modifier:
-- Seuil de confiance (défaut: 0.30)
+- Seuil de confiance (défaut: 0.60)
 - Dossiers de modèles
 - Nombre d'itérations warmup
-
----
-
-## Depannage
-
-| Problème | Solution |
-|----------|----------|
-| `No module named 'cv2'` | `pip install opencv-python` |
-| `No module named 'onnxruntime'` | `pip install onnxruntime` |
-| Coral TPU non détecté | `lsusb \| grep "Global Unichip"` + réinstaller drivers |
-| Pas de température | Normal sur PC. Sur RPi: vérifier `/sys/class/thermal/thermal_zone0/temp` |
-| Dataset trop gros | Réduire `--frames` (ex: 100) |
-| Détections 3D = 0 | Vérifier données profondeur RealSense |
-
----
-
-## Interpretation des Resultats
-
-### FPS (Images/sec)
-- **> 30 FPS** : Temps réel ✅
-- **10-30 FPS** : Acceptable pour certaines applications
-- **< 10 FPS** : Trop lent ❌
-
-### Mémoire
-- **< 100 MB** : Excellent pour embarqué ✅
-- **100-300 MB** : Acceptable
-- **> 300 MB** : Risque sur Raspberry Pi
-
-### Température (Raspberry Pi)
-- **< 60°C** : Normal ✅
-- **60-80°C** : Chaud mais acceptable
-- **> 80°C** : Risque de throttling ⚠️
-
----
 
 ## Modeles Testes
 
 Le système teste automatiquement:
 - **TFLite** : FP32, FP16, INT8 (standard et pruned)
-- **TFLite EdgeTPU** : Optimisé pour Coral TPU
+- **TFLite EdgeTPU** : Int8, Optimisé pour Coral TPU
 - **ONNX** : FP32, FP16, INT8 (avec XNNPACK sur ARM)
 
 **Résolutions** : 256×256 et 320×320 pixels
-
----
-
-## Recommandations
-
-Pour votre projet ROS2 de détection de balle:
-
-| Critère | Priorité | Seuil |
-|---------|----------|-------|
-| FPS | ⭐⭐⭐⭐⭐ | > 30 fps |
-| Latence | ⭐⭐⭐⭐ | < 33 ms |
-| Mémoire | ⭐⭐⭐ | < 200 MB |
-| Précision | ⭐⭐⭐⭐ | Conf > 0.7 |
-
-**Conseil** : Privilégiez les modèles **INT8** avec **pruning** (ex: `best-int8_256_pruned`) pour un bon compromis vitesse/précision sur Raspberry Pi.
 
 ---
 
@@ -278,6 +188,9 @@ Pour votre projet ROS2 de détection de balle:
   - Postprocessing (NMS)
   - Lookup profondeur + projection 3D
 
+- **preview_dataset.py** : Previsualiser le dataset
+  - Affiche les images + annotations et la meilleure bounding box
+
 - **run_benchmark.py** : Orchestrateur
   - Découverte automatique des modèles
   - Détection de plateforme
@@ -285,7 +198,6 @@ Pour votre projet ROS2 de détection de balle:
 
 - **analyze_results.py** : Visualisation
   - Graphiques comparatifs (PNG)
-  - Rapport HTML interactif
 
 - **compare_platforms.py** : Comparaison multi-plateforme
   - Heatmap de speedup
@@ -293,6 +205,3 @@ Pour votre projet ROS2 de détection de balle:
 
 ---
 
-**Bon benchmarking !**
-
-Pour plus de détails sur l'architecture, consultez les anciennes documentations ou le code source.

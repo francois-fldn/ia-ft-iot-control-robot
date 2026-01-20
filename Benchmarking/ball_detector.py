@@ -14,7 +14,7 @@ import os
 
 
 class BallDetectorBenchmark:
-    """Détecteur de balle optimisé pour le benchmarking"""
+    # Détecteur de balle optimisé pour le benchmarking
     
     def __init__(self, model_path: str, input_size: int, runtime: str = 'tflite',
                  conf_threshold: float = 0.25, use_edgetpu: bool = False):
@@ -53,7 +53,7 @@ class BallDetectorBenchmark:
         self._load_model()
         
     def _load_model(self):
-        """Charge le modèle selon le runtime"""
+        # Charge le modèle selon le runtime
         if self.runtime == 'tflite':
             self._load_tflite()
         elif self.runtime == 'onnx':
@@ -62,7 +62,7 @@ class BallDetectorBenchmark:
             raise ValueError(f"Runtime non supporté: {self.runtime}")
     
     def _load_tflite(self):
-        """Charge un modèle TFLite"""
+        # Charge un modèle TFLite
         try:
             # Essayer d'importer tflite_runtime, sinon fallback sur tensorflow
             try:
@@ -115,7 +115,7 @@ class BallDetectorBenchmark:
             raise e
     
     def _load_onnx(self):
-        """Charge un modèle ONNX avec XNNPACK"""
+        # Charge un modèle ONNX avec XNNPACK
         try:
             import onnxruntime as ort
             
@@ -181,12 +181,6 @@ class BallDetectorBenchmark:
                camera_intrinsics: Dict, record_metrics: bool = True) -> Tuple[List[Dict], Dict]:
         """
         Détecte les balles et calcule les coordonnées 3D
-        
-        Args:
-            rgb_image: Image RGB (OpenCV format)
-            depth_image: Image de profondeur
-            camera_intrinsics: Intrinsics caméra {'k': [fx, 0, cx, 0, fy, cy, 0, 0, 1]}
-            record_metrics: Enregistrer les métriques
             
         Returns:
             detections: Liste des détections [{bbox, confidence, pos_3d}]
@@ -194,7 +188,7 @@ class BallDetectorBenchmark:
         """
         t_start = time.perf_counter()
         
-        # --- PREPROCESSING ---
+        # Preprocess
         t_pre_start = time.perf_counter()
         cam_h, cam_w = rgb_image.shape[:2]
         img_resized = cv2.resize(rgb_image, (self.model_w, self.model_h))
@@ -203,7 +197,7 @@ class BallDetectorBenchmark:
         t_pre_end = time.perf_counter()
         preprocess_time = (t_pre_end - t_pre_start) * 1000
         
-        # --- INFERENCE ---
+        # Inference
         t_inf_start = time.perf_counter()
         
         if self.runtime == 'tflite':
@@ -214,7 +208,7 @@ class BallDetectorBenchmark:
         t_inf_end = time.perf_counter()
         inference_time = (t_inf_end - t_inf_start) * 1000
         
-        # --- POSTPROCESSING ---
+        # Postprocess
         t_post_start = time.perf_counter()
         
         candidates = detections_raw[detections_raw[:, 4] > self.conf_threshold]
@@ -252,7 +246,7 @@ class BallDetectorBenchmark:
                 'pos_3d': None
             }
             
-            # --- DEPTH LOOKUP ---
+            # Depth lookup
             t_depth_start = time.perf_counter()
             
             if depth_image is not None:
@@ -269,7 +263,7 @@ class BallDetectorBenchmark:
                     t_depth_end = time.perf_counter()
                     t_depth_total += (t_depth_end - t_depth_start) * 1000
                     
-                    # --- 3D PROJECTION ---
+                    # 3D projection
                     if 0.1 < dist_z_m < 10.0 and not math.isnan(dist_z_m):
                         t_proj_start = time.perf_counter()
                         
@@ -285,7 +279,7 @@ class BallDetectorBenchmark:
                         raw_y = (v_depth - cy_opt) * dist_z_m / fy
                         raw_z = dist_z_m
                         
-                        # Transformation vers base_footprint (comme dans b_d.py)
+                        # Transformation vers base_footprint
                         detection['pos_3d'] = {
                             'x': float(raw_z),
                             'y': -float(raw_x),
@@ -360,13 +354,10 @@ class BallDetectorBenchmark:
             return raw
     
     def _infer_onnx(self, input_data: np.ndarray) -> np.ndarray:
-        """Inférence ONNX"""
-        # ONNX attend NCHW (batch, channels, height, width)
-        # input_data est en NHWC (batch, height, width, channels)
+        # Inférence ONNX
         input_data = input_data.astype(np.float32) / 255.0
         input_data = np.transpose(input_data, (0, 3, 1, 2))  # NHWC -> NCHW
         
-        # Convertir au type attendu (float16 ou float32)
         if self.input_dtype == np.float16:
             input_data = input_data.astype(np.float16)
         
@@ -374,7 +365,7 @@ class BallDetectorBenchmark:
         return outputs[0][0]
     
     def get_summary_metrics(self) -> Dict:
-        """Calcule les métriques résumées"""
+        # Calcule les métriques résumées
         if not self.metrics['inference_times']:
             return {}
         
@@ -439,13 +430,13 @@ class BallDetectorBenchmark:
         return summary
     
     def reset_metrics(self):
-        """Réinitialise les métriques"""
+        # Réinitialise les métriques
         for key in self.metrics:
             self.metrics[key] = []
 
 
 def get_temperature() -> Optional[float]:
-    """Récupère la température du système"""
+    # Récupère la température du système
     try:
         if os.path.exists('/sys/class/thermal/thermal_zone0/temp'):
             with open('/sys/class/thermal/thermal_zone0/temp', 'r') as f:
