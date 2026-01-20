@@ -45,7 +45,7 @@ class BenchmarkAnalyzer:
             files = list(self.results_path.glob("benchmark_results_*.json"))
             if not files:
                 raise ValueError(f"Aucun fichier JSON trouvé dans {self.results_path}")
-            print(f"📊 Chargement de {len(files)} fichiers de résultats...")
+            print(f"Chargement de {len(files)} fichiers de resultats...")
             for f in files:
                 with open(f, 'r') as json_file:
                     all_data.extend(json.load(json_file))
@@ -67,7 +67,7 @@ class BenchmarkAnalyzer:
         all_numeric = df_raw.select_dtypes(include=[np.number]).columns.tolist()
         numeric_cols = [c for c in all_numeric if c not in meta_cols]
         
-        print("🔄 Agrégation des répétitions (moyenne/std)...")
+        print("Aggregation des repetitions (moyenne/std)...")
         # Grouper et calculer moyenne + écart-type
         df_agg = df_raw.groupby('model_name')[numeric_cols].agg(['mean', 'std']).reset_index()
         
@@ -92,7 +92,7 @@ class BenchmarkAnalyzer:
             conso_file = self.results_path.parent / "benchmark_conso_Amp.json"
             
         if conso_file.exists():
-            print(f"⚡ Chargement de la consommation: {conso_file.name}")
+            print(f"Chargement de la consommation: {conso_file.name}")
             with open(conso_file, 'r') as f:
                 conso_data = json.load(f)
             
@@ -121,7 +121,7 @@ class BenchmarkAnalyzer:
             df_final['power_watts'] = powers
             df_final['efficiency_fps_watt'] = efficiencies
         else:
-            print("⚠️ Fichier benchmark_conso_Amp.json introuvable")
+            print("Fichier benchmark_conso_Amp.json introuvable")
             df_final['power_watts'] = 0
             df_final['efficiency_fps_watt'] = 0
             
@@ -177,7 +177,7 @@ class BenchmarkAnalyzer:
         plt.tight_layout()
         save_path = self.output_dir / "inference_time_comparison.png"
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"✓ Graphique sauvegardé: {save_path}")
+        print(f"Graphique sauvegarde: {save_path}")
         plt.close()
     
     def plot_fps_comparison(self):
@@ -220,7 +220,7 @@ class BenchmarkAnalyzer:
         plt.tight_layout()
         save_path = self.output_dir / "fps_comparison.png"
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"✓ Graphique sauvegardé: {save_path}")
+        print(f"Graphique sauvegarde: {save_path}")
         plt.close()
     
     def plot_memory_usage(self):
@@ -248,7 +248,7 @@ class BenchmarkAnalyzer:
         plt.tight_layout()
         save_path = self.output_dir / "memory_usage.png"
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"✓ Graphique sauvegardé: {save_path}")
+        print(f"Graphique sauvegarde: {save_path}")
         plt.close()
     
     def plot_cpu_usage(self):
@@ -276,18 +276,18 @@ class BenchmarkAnalyzer:
         plt.tight_layout()
         save_path = self.output_dir / "cpu_usage.png"
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"✓ Graphique sauvegardé: {save_path}")
+        print(f"Graphique sauvegarde: {save_path}")
         plt.close()
     
     def plot_temperature(self):
         """Compare les températures (si disponibles)"""
         if 'temperature_mean' not in self.df.columns:
-            print("⚠ Pas de données de température disponibles")
+            print("Pas de donnees de temperature disponibles")
             return
         
         df_temp = self.df.dropna(subset=['temperature_mean'])
         if df_temp.empty:
-            print("⚠ Pas de données de température disponibles")
+            print("Pas de donnees de temperature disponibles")
             return
         
         fig, ax = plt.subplots(figsize=(14, 8))
@@ -313,7 +313,7 @@ class BenchmarkAnalyzer:
         plt.tight_layout()
         save_path = self.output_dir / "temperature.png"
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"✓ Graphique sauvegardé: {save_path}")
+        print(f"Graphique sauvegarde: {save_path}")
         plt.close()
     
     def plot_efficiency_scatter(self):
@@ -344,13 +344,13 @@ class BenchmarkAnalyzer:
         plt.tight_layout()
         save_path = self.output_dir / "efficiency_scatter.png"
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"✓ Graphique sauvegardé: {save_path}")
+        print(f"Graphique sauvegarde: {save_path}")
         plt.close()
     
     def plot_power_consumption(self):
         """Compare la consommation électrique (Watts)"""
         if 'power_watts' not in self.df.columns or self.df['power_watts'].sum() == 0:
-            print("⚠ Pas de données de consommation disponibles")
+            print("Pas de donnees de consommation disponibles")
             return
             
         fig, ax = plt.subplots(figsize=(14, 8))
@@ -378,13 +378,13 @@ class BenchmarkAnalyzer:
         plt.tight_layout()
         save_path = self.output_dir / "power_consumption.png"
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"✓ Graphique sauvegardé: {save_path}")
+        print(f"Graphique sauvegarde: {save_path}")
         plt.close()
 
     def plot_efficiency_watts(self):
         """Compare l'efficacité énergétique (FPS/Watt)"""
         if 'efficiency_fps_watt' not in self.df.columns or self.df['efficiency_fps_watt'].sum() == 0:
-            print("⚠ Pas de données d'efficacité disponibles")
+            print("Pas de donnees d'efficacite disponibles")
             return
             
         fig, ax = plt.subplots(figsize=(14, 8))
@@ -412,7 +412,7 @@ class BenchmarkAnalyzer:
         plt.tight_layout()
         save_path = self.output_dir / "efficiency_fps_per_watt.png"
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"✓ Graphique sauvegardé: {save_path}")
+        print(f"Graphique sauvegarde: {save_path}")
         plt.close()
 
     def generate_html_report(self):
@@ -496,7 +496,7 @@ class BenchmarkAnalyzer:
     </style>
 </head>
 <body>
-    <h1>📊 Rapport de Benchmarking YOLO</h1>
+    <h1>Rapport de Benchmarking YOLO</h1>
     
     <div class="summary">
         <h2>Résumé</h2>
@@ -514,7 +514,7 @@ class BenchmarkAnalyzer:
         </div>
     </div>
     
-    <h2>🏆 Meilleurs modèles par catégorie</h2>
+    <h2>Meilleurs modeles par categorie</h2>
     <div class="summary">
         <p><strong>Plus rapide (FPS):</strong> {self.df.loc[self.df['fps_mean'].idxmax(), 'model_name']} 
            ({self.df['fps_mean'].max():.2f} FPS)</p>
@@ -524,7 +524,7 @@ class BenchmarkAnalyzer:
            ({self.df['memory_usage_mean'].min():.1f} MB)</p>
     </div>
     
-    <h2>📈 Graphiques de comparaison</h2>
+    <h2>Graphiques de comparaison</h2>
 """
         
         # Ajouter les graphiques
@@ -551,7 +551,7 @@ class BenchmarkAnalyzer:
         
         # Tableau détaillé
         html_content += """
-    <h2>📋 Résultats détaillés</h2>
+    <h2>Resultats detailles</h2>
     <table>
         <thead>
             <tr>
@@ -607,7 +607,7 @@ class BenchmarkAnalyzer:
         with open(report_path, 'w', encoding='utf-8') as f:
             f.write(html_content)
         
-        print(f"✓ Rapport HTML généré: {report_path}")
+        print(f"Rapport HTML genere: {report_path}")
     
     def analyze(self):
         """Lance toutes les analyses"""
@@ -615,7 +615,7 @@ class BenchmarkAnalyzer:
         print(f"Analyse des résultats: {self.results_path.name}")
         print(f"{'='*60}\n")
         
-        print("Génération des graphiques...")
+        print("Generation des graphiques...")
         self.plot_inference_time_comparison()
         self.plot_fps_comparison()
         self.plot_memory_usage()
@@ -625,11 +625,11 @@ class BenchmarkAnalyzer:
         self.plot_efficiency_watts()
         self.plot_efficiency_scatter()
         
-        print("\nGénération du rapport HTML...")
+        print("\nGeneration du rapport HTML...")
         self.generate_html_report()
         
         print(f"\n{'='*60}")
-        print(f"Analyse terminée!")
+        print(f"Analyse terminee!")
         print(f"Graphiques dans: {self.output_dir}")
         print(f"{'='*60}")
 

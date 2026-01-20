@@ -79,7 +79,7 @@ class BallDetectorBenchmark:
                     for lib in libs:
                         try:
                             delegate = tflite.load_delegate(lib)
-                            print(f"✓ Délégué EdgeTPU chargé: {lib}")
+                            print(f"Delegue EdgeTPU charge: {lib}")
                             break
                         except ValueError:
                             continue
@@ -91,27 +91,27 @@ class BallDetectorBenchmark:
                         model_path=self.model_path,
                         experimental_delegates=[delegate]
                     )
-                    print(f"✓ Modèle EdgeTPU chargé: {os.path.basename(self.model_path)}")
+                    print(f"Modele EdgeTPU charge: {os.path.basename(self.model_path)}")
                     
                 except Exception as e:
-                    print(f"⚠️  Échec chargement EdgeTPU direct: {e}")
+                    print(f"Echec chargement EdgeTPU direct: {e}")
                     # Fallback sur pycoral si installé (ancienne méthode)
                     try:
                         from pycoral.utils import edgetpu
                         self.interpreter = edgetpu.make_interpreter(self.model_path)
-                        print(f"✓ Modèle EdgeTPU chargé (via pycoral): {os.path.basename(self.model_path)}")
+                        print(f"Modele EdgeTPU charge (via pycoral): {os.path.basename(self.model_path)}")
                     except ImportError:
                         raise ValueError(f"EdgeTPU requis mais impossible à charger (ni libedgetpu ni pycoral): {e}")
             else:
                 self.interpreter = tflite.Interpreter(model_path=self.model_path)
-                print(f"✓ Modèle TFLite chargé: {os.path.basename(self.model_path)}")
+                print(f"Modele TFLite charge: {os.path.basename(self.model_path)}")
             
             self.interpreter.allocate_tensors()
             self.input_details = self.interpreter.get_input_details()
             self.output_details = self.interpreter.get_output_details()
             
         except Exception as e:
-            print(f"✗ Erreur chargement TFLite: {e}")
+            print(f"Erreur chargement TFLite: {e}")
             raise e
     
     def _load_onnx(self):
@@ -126,11 +126,23 @@ class BallDetectorBenchmark:
             # Providers: XNNPACK pour ARM, CPU sinon
             providers = ['CPUExecutionProvider']
             
-            # Essayer d'utiliser XNNPACK si disponible
+            # Essayer d'utiliser GPU (CUDA/TensorRT) ou XNNPACK si disponible
             available_providers = ort.get_available_providers()
+            
+            # Priorité 1: TensorRT (Jetson/NVIDIA)
+            if 'TensorrtExecutionProvider' in available_providers:
+                providers.insert(0, 'TensorrtExecutionProvider')
+                print(f"TensorRT active")
+            
+            # Priorité 2: CUDA (NVIDIA)
+            if 'CUDAExecutionProvider' in available_providers:
+                providers.insert(0, 'CUDAExecutionProvider')
+                print(f"CUDA active")
+                
+            # Priorité 3: XNNPACK (ARM CPU)
             if 'XnnpackExecutionProvider' in available_providers:
                 providers.insert(0, 'XnnpackExecutionProvider')
-                print(f"✓ XNNPACK activé")
+                print(f"XNNPACK active")
             
             self.session = ort.InferenceSession(
                 self.model_path,
@@ -145,12 +157,12 @@ class BallDetectorBenchmark:
             input_type = self.session.get_inputs()[0].type
             self.input_dtype = np.float16 if 'float16' in input_type else np.float32
             
-            print(f"✓ Modèle ONNX chargé: {os.path.basename(self.model_path)}")
+            print(f"Modele ONNX charge: {os.path.basename(self.model_path)}")
             print(f"  Providers: {self.session.get_providers()}")
             print(f"  Input type: {input_type}")
             
         except Exception as e:
-            print(f"✗ Erreur chargement ONNX: {e}")
+            print(f"Erreur chargement ONNX: {e}")
             raise e
     
     def warmup(self, iterations: int = 10):
@@ -163,7 +175,7 @@ class BallDetectorBenchmark:
         for i in range(iterations):
             self.detect(dummy_rgb, dummy_depth, dummy_intrinsics, record_metrics=False)
         
-        print("✓ Warmup terminé")
+        print("Warmup termine")
     
     def detect(self, rgb_image: np.ndarray, depth_image: np.ndarray, 
                camera_intrinsics: Dict, record_metrics: bool = True) -> Tuple[List[Dict], Dict]:

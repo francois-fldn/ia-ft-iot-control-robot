@@ -68,7 +68,7 @@ def load_aggregated_data(directory):
                     # Consommation idle - utiliser moyenne si disponible, sinon max
                     baseline_power = item.get('conso_ampere_mean', 
                                              item.get('conso_ampere_max', 0)) * 5.0
-                    print(f"  📍 Baseline idle: {baseline_power:.2f}W")
+                    print(f"  Baseline idle: {baseline_power:.2f}W")
                     break
             
             # Ensuite, charger les consommations des modèles et soustraire le baseline
@@ -135,6 +135,7 @@ class PlatformComparator:
         self.colors = {
             'raspberry_pi4': '#1f77b4',  # Bleu
             'raspberry_pi4_coral': '#ff7f0e',  # Orange
+            'jetson_orin': '#d62728',  # Rouge
             'pc': '#2ca02c',  # Vert
         }
         
@@ -165,7 +166,7 @@ class PlatformComparator:
         plt.tight_layout()
         save_path = self.output_dir / filename
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"✓ {filename}")
+        print(f"Sauvegarde: {filename}")
         plt.close()
     
     def generate_csv(self):
@@ -186,7 +187,7 @@ class PlatformComparator:
         
         csv_path = self.output_dir / "platform_comparison.csv"
         summary.to_csv(csv_path, index=False)
-        print(f"✓ platform_comparison.csv")
+        print(f"Sauvegarde: platform_comparison.csv")
         
         return summary
     
@@ -198,7 +199,7 @@ class PlatformComparator:
         print(f"Total modèles: {len(self.df)}")
         print(f"{'='*60}\n")
         
-        print("🎨 Génération des graphiques...")
+        print("Generation des graphiques...")
         
         self.plot_metric('inference_time_mean', 
                         'Comparaison des Temps d\'Inférence', 
@@ -229,11 +230,11 @@ class PlatformComparator:
         summary = self.generate_csv()
         
         print(f"\n{'='*60}")
-        print("✅ Comparaison terminée!")
+        print("Comparaison terminee!")
         print(f"Résultats dans: {self.output_dir}")
         print(f"{'='*60}")
         
-        print("\n📊 Résumé (10 premiers modèles):")
+        print("\nResume (10 premiers modeles):")
         print(summary.head(10).to_string(index=False))
 
 

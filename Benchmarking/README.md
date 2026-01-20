@@ -1,10 +1,10 @@
-# 🎾 Benchmarking YOLO - Détection de Balle
+# Benchmarking YOLO - Detection de Balle
 
 Système de benchmarking pour modèles YOLO (TFLite/ONNX) sur PC, Raspberry Pi 4, et Raspberry Pi 4 + Coral TPU.
 
-## 🚀 Démarrage Rapide
+## Demarrage Rapide
 
-### 1️⃣ Enregistrer les données RealSense
+### 1. Enregistrer les donnees RealSense
 
 ```bash
 # Terminal 1: Lancer le publisher RealSense
@@ -25,12 +25,17 @@ python3 record_realsense.py --output tennis_ball_dataset.pkl.gz --frames 300
 python3 preview_dataset.py tennis_ball_dataset.pkl.gz
 ```
 
-### 2️⃣ Installer les dépendances
+### 2. Installer les dependances
 
 ```bash
 # PC ou Raspberry Pi 4
 pip install opencv-python tqdm psutil pandas matplotlib seaborn pyyaml
 pip install onnxruntime  # Pour modèles ONNX
+
+# NVIDIA Jetson Orin
+# Assurez-vous d'avoir JetPack installé
+pip install onnxruntime-gpu
+# Note: TensorFlow/TFLite peut nécessiter une installation spécifique via NVIDIA
 
 # Coral TPU (Raspberry Pi 4 uniquement)
 echo "deb https://packages.cloud.google.com/apt coral-edgetpu-stable main" | sudo tee /etc/apt/sources.list.d/coral-edgetpu.list
@@ -38,7 +43,7 @@ curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
 sudo apt-get update && sudo apt-get install libedgetpu1-std python3-pycoral
 ```
 
-### 3️⃣ Lancer le benchmark
+### 3. Lancer le benchmark
 
 ```bash
 # Auto-détection de la plateforme
@@ -48,11 +53,12 @@ python3 run_benchmark.py tennis_ball_dataset.pkl.gz
 python3 run_benchmark.py tennis_ball_dataset.pkl.gz --platform pc
 python3 run_benchmark.py tennis_ball_dataset.pkl.gz --platform raspberry_pi4
 python3 run_benchmark.py tennis_ball_dataset.pkl.gz --platform raspberry_pi4_coral
+python3 run_benchmark.py tennis_ball_dataset.pkl.gz --platform jetson_orin
 ```
 
 **Durée estimée:** PC: 15-30 min | RPi4: 30-60 min | RPi4+Coral: 15-20 min
 
-### 4️⃣ Analyser les résultats
+### 4. Analyser les resultats
 
 #### Analyse d'un benchmark unique
 ```bash
@@ -63,7 +69,7 @@ python3 analyze_results.py benchmark_results/benchmark_results_TIMESTAMP.json
 open benchmark_results/benchmark_report_TIMESTAMP.html
 ```
 
-#### 🔄 Analyse avec agrégation (plusieurs répétitions)
+#### Analyse avec agregation (plusieurs repetitions)
 Pour améliorer la fiabilité des résultats, exécutez le benchmark **10 fois** et analysez la moyenne :
 
 ```bash
@@ -79,11 +85,11 @@ python3 analyze_results.py benchmark_results/benchmark_results_PLATFORM/
 ```
 
 **Avantages de l'agrégation :**
-- 📊 **Moyenne** : Valeur représentative de la performance
-- 📉 **Écart-type (std)** : Mesure de la stabilité (plus faible = plus fiable)
-- ✅ Élimine les valeurs aberrantes dues aux pics de charge système
+- **Moyenne** : Valeur representative de la performance
+- **Ecart-type (std)** : Mesure de la stabilite (plus faible = plus fiable)
+- Elimine les valeurs aberrantes dues aux pics de charge systeme
 
-#### ⚡ Analyse de la consommation électrique (Raspberry Pi uniquement)
+#### Analyse de la consommation electrique (Raspberry Pi uniquement)
 Si un fichier `benchmark_conso_Amp.json` est présent dans le dossier des résultats, l'analyse inclut automatiquement :
 - **Consommation en Watts** (Ampères × 5V)
 - **Efficacité énergétique** (FPS / Watt)
@@ -103,7 +109,7 @@ Exemple de structure attendue pour `benchmark_conso_Amp.json` :
 - `power_consumption.png` : Consommation en Watts par modèle
 - `efficiency_fps_per_watt.png` : Efficacité (FPS/W) - plus c'est élevé, mieux c'est !
 
-#### 🔄 Comparer plusieurs plateformes
+#### Comparer plusieurs plateformes
 ```bash
 # Analyser et comparer 2 plateformes
 python3 compare_platforms.py benchmark_results/benchmark_results_pi4/ benchmark_results/benchmark_results_coral/
@@ -121,7 +127,7 @@ python3 compare_platforms.py benchmark_results/benchmark_results_pi4/ benchmark_
 
 ---
 
-## 📊 Métriques Mesurées
+## Metriques Mesurees
 
 | Métrique | Description | Unité |
 |----------|-------------|-------|
@@ -139,36 +145,36 @@ python3 compare_platforms.py benchmark_results/benchmark_results_pi4/ benchmark_
 
 **std** (écart-type) = stabilité des performances. Plus c'est faible, plus c'est stable.
 
-**💡 Astuce** : Avec l'agrégation de 10 répétitions, toutes les métriques incluent automatiquement leur écart-type, montrant la reproductibilité.
+**Info** : Avec l'agregation de 10 repetitions, toutes les metriques incluent automatiquement leur ecart-type, montrant la reproductibilite.
 
 ---
 
-## 📁 Structure
+## Structure
 
 ```
 DETEC_BALL_PROJET/
-├── record_realsense.py      # 📹 Enregistrer données RealSense
-├── preview_dataset.py        # 👀 Prévisualiser le dataset
-├── ball_detector.py          # 🤖 Détecteur TFLite/ONNX
-├── run_benchmark.py          # 🎯 Lancer le benchmark
-├── analyze_results.py        # 📊 Analyser les résultats
-├── compare_platforms.py      # 🔄 Comparer plateformes
-├── benchmark_config.yaml     # ⚙️ Configuration
-└── modeles_yolo/            # 🤖 Modèles (256, 320, pruned)
+├── record_realsense.py      # Enregistrer donnees RealSense
+├── preview_dataset.py        # Previsualiser le dataset
+├── ball_detector.py          # Detecteur TFLite/ONNX
+├── run_benchmark.py          # Lancer le benchmark
+├── analyze_results.py        # Analyser les resultats
+├── compare_platforms.py      # Comparer plateformes
+├── benchmark_config.yaml     # Configuration
+└── modeles_yolo/            # Modeles (256, 320, pruned)
     ├── 256/
     ├── 320/
     ├── 256_pruned/
     └── 320_pruned/
 ```
 
-**Résultats générés** (dans `benchmark_results/`):
-- `*.json` : Données brutes
+**Resultats generes** (dans `benchmark_results/`):
+- `*.json` : Donnees brutes
 - `*.csv` : Tableau Excel
 - `*.html` : Rapport interactif avec graphiques
 
 ---
 
-## 🎯 Workflow Complet
+## Workflow Complet
 
 ```bash
 # 1. Enregistrer le dataset (sur machine avec RealSense)
@@ -193,7 +199,7 @@ python3 compare_platforms.py results_*.json
 
 ---
 
-## 🔧 Configuration
+## Configuration
 
 Éditez `benchmark_config.yaml` pour modifier:
 - Seuil de confiance (défaut: 0.30)
@@ -202,7 +208,7 @@ python3 compare_platforms.py results_*.json
 
 ---
 
-## 🐛 Dépannage
+## Depannage
 
 | Problème | Solution |
 |----------|----------|
@@ -215,7 +221,7 @@ python3 compare_platforms.py results_*.json
 
 ---
 
-## 📈 Interprétation des Résultats
+## Interpretation des Resultats
 
 ### FPS (Images/sec)
 - **> 30 FPS** : Temps réel ✅
@@ -234,7 +240,7 @@ python3 compare_platforms.py results_*.json
 
 ---
 
-## 🎓 Modèles Testés
+## Modeles Testes
 
 Le système teste automatiquement:
 - **TFLite** : FP32, FP16, INT8 (standard et pruned)
@@ -245,7 +251,7 @@ Le système teste automatiquement:
 
 ---
 
-## 💡 Recommandations
+## Recommandations
 
 Pour votre projet ROS2 de détection de balle:
 
@@ -260,7 +266,7 @@ Pour votre projet ROS2 de détection de balle:
 
 ---
 
-## 📚 Fichiers Utiles
+## Fichiers Utiles
 
 - **record_realsense.py** : Capture RGB + Depth + CameraInfo
   - Enregistre au format `.pkl.gz` (compressé)
@@ -287,6 +293,6 @@ Pour votre projet ROS2 de détection de balle:
 
 ---
 
-**🚀 Bon benchmarking !**
+**Bon benchmarking !**
 
 Pour plus de détails sur l'architecture, consultez les anciennes documentations ou le code source.

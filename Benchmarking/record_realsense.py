@@ -32,7 +32,7 @@ class RealSenseRecorder(Node):
         
         # Subscribers
         if use_realsense_topics:
-            self.get_logger().info("📹 Mode RealSense: topics Realsense/*")
+            self.get_logger().info("Mode RealSense: topics Realsense/*")
             self.sub_rgb = self.create_subscription(
                 Image, 'Realsense/Image/Color', self.callback_rgb, 10)
             self.sub_depth = self.create_subscription(
@@ -40,7 +40,7 @@ class RealSenseRecorder(Node):
             self.sub_info = self.create_subscription(
                 CameraInfo, 'Realsense/CameraInfo', self.callback_info, 10)
         else:
-            self.get_logger().info("📹 Mode Gazebo: topics *_camera/*")
+            self.get_logger().info("Mode Gazebo: topics *_camera/*")
             self.sub_rgb = self.create_subscription(
                 Image, 'rgb_camera/image', self.callback_rgb, 10)
             self.sub_depth = self.create_subscription(
@@ -51,8 +51,8 @@ class RealSenseRecorder(Node):
         self.latest_rgb = None
         self.latest_depth = None
         
-        self.get_logger().info(f"🎬 Enregistrement démarré - Max {max_frames} frames")
-        self.get_logger().info(f"📁 Sortie: {self.output_file}")
+        self.get_logger().info(f"Enregistrement demarre - Max {max_frames} frames")
+        self.get_logger().info(f"Sortie: {self.output_file}")
     
     def callback_info(self, msg):
         """Stocke les infos caméra (une seule fois)"""
@@ -65,7 +65,7 @@ class RealSenseRecorder(Node):
                 'd': list(msg.d),
                 'p': list(msg.p)
             }
-            self.get_logger().info(f"✅ CameraInfo capturé: {msg.width}x{msg.height}")
+            self.get_logger().info(f"CameraInfo capture: {msg.width}x{msg.height}")
     
     def callback_depth(self, msg):
         """Stocke la dernière image de profondeur"""
@@ -78,7 +78,7 @@ class RealSenseRecorder(Node):
         """Enregistre une frame complète (RGB + Depth)"""
         if self.frame_count >= self.max_frames:
             if self.frame_count == self.max_frames:
-                self.get_logger().info("🏁 Nombre max de frames atteint - Sauvegarde...")
+                self.get_logger().info("Nombre max de frames atteint - Sauvegarde...")
                 self.save_dataset()
                 self.frame_count += 1  # Pour ne sauvegarder qu'une fois
             return
@@ -105,12 +105,12 @@ class RealSenseRecorder(Node):
         self.frame_count += 1
         
         if self.frame_count % 10 == 0:
-            self.get_logger().info(f"📸 {self.frame_count}/{self.max_frames} frames enregistrées")
+            self.get_logger().info(f"{self.frame_count}/{self.max_frames} frames enregistrees")
     
     def save_dataset(self):
         """Sauvegarde le dataset dans un fichier compressé"""
         if not self.frames:
-            self.get_logger().error("❌ Aucune frame à sauvegarder!")
+            self.get_logger().info("Aucune frame a sauvegarder!")
             return
         
         dataset = {
@@ -127,19 +127,19 @@ class RealSenseRecorder(Node):
         self.output_file.parent.mkdir(parents=True, exist_ok=True)
         
         # Sauvegarder avec compression
-        self.get_logger().info("💾 Compression et sauvegarde...")
+        self.get_logger().info("Compression et sauvegarde...")
         with gzip.open(self.output_file, 'wb') as f:
             pickle.dump(dataset, f, protocol=pickle.HIGHEST_PROTOCOL)
         
         file_size_mb = self.output_file.stat().st_size / (1024 * 1024)
         
         self.get_logger().info("=" * 60)
-        self.get_logger().info("✅ ENREGISTREMENT TERMINÉ")
+        self.get_logger().info("ENREGISTREMENT TERMINE")
         self.get_logger().info("=" * 60)
-        self.get_logger().info(f"📁 Fichier: {self.output_file}")
-        self.get_logger().info(f"📊 Frames: {len(self.frames)}")
-        self.get_logger().info(f"💾 Taille: {file_size_mb:.1f} MB")
-        self.get_logger().info(f"📐 Résolution: {self.camera_info['width']}x{self.camera_info['height']}")
+        self.get_logger().info(f"Fichier: {self.output_file}")
+        self.get_logger().info(f"Frames: {len(self.frames)}")
+        self.get_logger().info(f"Taille: {file_size_mb:.1f} MB")
+        self.get_logger().info(f"Resolution: {self.camera_info['width']}x{self.camera_info['height']}")
         self.get_logger().info("=" * 60)
         
         # Arrêter le node
@@ -171,7 +171,7 @@ def main():
     try:
         rclpy.spin(recorder)
     except KeyboardInterrupt:
-        recorder.get_logger().warning("⚠️ Enregistrement interrompu!")
+        recorder.get_logger().warning("Enregistrement interrompu!")
         if recorder.frames:
             recorder.save_dataset()
     finally:

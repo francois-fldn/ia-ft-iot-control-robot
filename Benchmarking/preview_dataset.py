@@ -25,7 +25,7 @@ def preview_dataset(dataset_path: str, start_frame: int = 0, fps: int = 10,
         detect_model: Chemin vers un modèle YOLO pour afficher les détections (optionnel)
         conf_threshold: Seuil de confiance pour les détections
     """
-    print(f"\n📂 Chargement du dataset: {dataset_path}")
+    print(f"\nChargement du dataset: {dataset_path}")
     
     # Charger le dataset
     with gzip.open(dataset_path, 'rb') as f:
@@ -33,7 +33,7 @@ def preview_dataset(dataset_path: str, start_frame: int = 0, fps: int = 10,
     
     # Afficher les métadonnées
     print("\n" + "="*60)
-    print("📊 MÉTADONNÉES DU DATASET")
+    print("METADONNEES DU DATASET")
     print("="*60)
     print(f"Frames: {dataset['metadata']['num_frames']}")
     print(f"Résolution: {dataset['metadata']['resolution']}")
@@ -50,10 +50,10 @@ def preview_dataset(dataset_path: str, start_frame: int = 0, fps: int = 10,
     if detect_model:
         model_path = Path(detect_model)
         if not model_path.exists():
-            print(f"⚠️  Modèle introuvable: {detect_model}")
-            print("   Prévisualisation sans détection")
+            print(f"Modele introuvable: {detect_model}")
+            print("   Previsualisation sans detection")
         else:
-            print(f"\n🤖 Chargement du modèle: {model_path.name}")
+            print(f"\nChargement du modele: {model_path.name}")
             runtime = 'onnx' if model_path.suffix == '.onnx' else 'tflite'
             input_size = 256 if '256' in model_path.name else 320
             use_edgetpu = 'edgetpu' in model_path.name
@@ -67,10 +67,10 @@ def preview_dataset(dataset_path: str, start_frame: int = 0, fps: int = 10,
             )
             print(f"   Seuil de confiance: {conf_threshold}")
     
-    print(f"\n▶️  Lecture à partir de la frame {start_frame}/{total_frames}")
-    print(f"⏱️  Vitesse: {fps} FPS")
+    print(f"\nLecture a partir de la frame {start_frame}/{total_frames}")
+    print(f"Vitesse: {fps} FPS")
     if detector:
-        print(f"🎯 Détection activée")
+        print(f"Detection activee")
     print("\nCommandes:")
     print("  ESPACE  - Pause/Reprendre")
     print("  →       - Frame suivante (en pause)")
@@ -161,31 +161,31 @@ def preview_dataset(dataset_path: str, start_frame: int = 0, fps: int = 10,
             break
         elif key == ord(' '):  # ESPACE
             paused = not paused
-            status = "⏸️  PAUSE" if paused else "▶️  LECTURE"
+            status = "PAUSE" if paused else "LECTURE"
             print(f"\r{status} - Frame {current_frame}/{total_frames-1}", end='', flush=True)
         elif key == 83:  # Flèche droite
             if paused and current_frame < total_frames - 1:
                 current_frame += 1
-                print(f"\r⏸️  PAUSE - Frame {current_frame}/{total_frames-1}", end='', flush=True)
+                print(f"\rPAUSE - Frame {current_frame}/{total_frames-1}", end='', flush=True)
             continue
         elif key == 81:  # Flèche gauche
             if paused and current_frame > 0:
                 current_frame -= 1
-                print(f"\r⏸️  PAUSE - Frame {current_frame}/{total_frames-1}", end='', flush=True)
+                print(f"\rPAUSE - Frame {current_frame}/{total_frames-1}", end='', flush=True)
             continue
         elif key == ord('s'):  # Sauvegarder
             output_dir = Path('preview_frames')
             output_dir.mkdir(exist_ok=True)
             cv2.imwrite(str(output_dir / f'frame_{current_frame:04d}_rgb.jpg'), rgb)
             cv2.imwrite(str(output_dir / f'frame_{current_frame:04d}_depth.png'), depth_colored)
-            print(f"\n💾 Frame {current_frame} sauvegardée dans {output_dir}/")
+            print(f"\nFrame {current_frame} sauvegardee dans {output_dir}/")
             continue
         
         if not paused:
             current_frame += 1
     
     cv2.destroyAllWindows()
-    print("\n\n✅ Prévisualisation terminée")
+    print("\n\nPrevisualisation terminee")
 
 
 def main():
@@ -204,7 +204,7 @@ def main():
     
     # Vérifier que le fichier existe
     if not Path(args.dataset).exists():
-        print(f"❌ Erreur: Fichier introuvable: {args.dataset}")
+        print(f"Erreur: Fichier introuvable: {args.dataset}")
         return
     
     preview_dataset(args.dataset, args.start, args.fps, args.detect, args.conf)

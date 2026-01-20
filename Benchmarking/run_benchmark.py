@@ -43,12 +43,12 @@ class BenchmarkRunner:
     
     def load_dataset(self, dataset_path: str) -> Dict:
         """Charge le dataset RealSense"""
-        print(f"\n📂 Chargement du dataset: {dataset_path}")
+        print(f"\nChargement du dataset: {dataset_path}")
         
         with gzip.open(dataset_path, 'rb') as f:
             dataset = pickle.load(f)
         
-        print(f"✓ Dataset chargé:")
+        print(f"Dataset charge:")
         print(f"  - Frames: {dataset['metadata']['num_frames']}")
         print(f"  - Résolution: {dataset['metadata']['resolution']}")
         print(f"  - Date: {dataset['metadata']['recording_date']}")
@@ -149,7 +149,7 @@ class BenchmarkRunner:
                 use_edgetpu=model_info['is_edgetpu']
             )
         except Exception as e:
-            print(f"✗ Erreur chargement: {e}")
+            print(f"Erreur chargement: {e}")
             return None
         
         # Warmup
@@ -160,7 +160,7 @@ class BenchmarkRunner:
         frames = dataset['frames']
         camera_info = dataset['camera_info']
         
-        print(f"\n📊 Test sur {len(frames)} frames...")
+        print(f"\nTest sur {len(frames)} frames...")
         
         temperatures = []
         
@@ -234,19 +234,19 @@ class BenchmarkRunner:
         # Détecter la plateforme
         if platform is None:
             platform = self._get_platform_info()
-            print(f"\n🖥️  Plateforme détectée: {platform}")
+            print(f"\nPlateforme detectee: {platform}")
         
         # Découvrir les modèles
-        print("\n🔍 Découverte des modèles...")
+        print("\nDecouverte des modeles...")
         all_models = self._discover_models()
-        print(f"✓ {len(all_models)} modèles trouvés")
+        print(f"{len(all_models)} modeles trouves")
         
         # Filtrer pour la plateforme
         models = self._filter_models_for_platform(all_models, platform)
-        print(f"✓ {len(models)} modèles compatibles avec {platform}")
+        print(f"{len(models)} modeles compatibles avec {platform}")
         
         if not models:
-            print("✗ Aucun modèle à tester!")
+            print("Aucun modele a tester!")
             return
         
         # Benchmarker chaque modèle
@@ -259,8 +259,8 @@ class BenchmarkRunner:
         self.save_results()
         
         print(f"\n{'='*70}")
-        print(f"✅ Benchmarking terminé!")
-        print(f"📁 Résultats dans: {self.output_dir}")
+        print(f"Benchmarking termine!")
+        print(f"Resultats dans: {self.output_dir}")
         print(f"{'='*70}")
     
     def save_results(self):
@@ -272,7 +272,7 @@ class BenchmarkRunner:
         json_path = self.output_dir / f"benchmark_results_{self.timestamp}.json"
         with open(json_path, 'w') as f:
             json.dump(self.results, f, indent=2)
-        print(f"\n✓ Résultats JSON: {json_path}")
+        print(f"\nResultats JSON: {json_path}")
         
         # CSV
         import csv
@@ -282,7 +282,7 @@ class BenchmarkRunner:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
             writer.writerows(self.results)
-        print(f"✓ Résultats CSV: {csv_path}")
+        print(f"Resultats CSV: {csv_path}")
 
 
 def main():
@@ -290,7 +290,7 @@ def main():
     parser.add_argument('dataset', type=str, help='Chemin vers le dataset RealSense (.pkl.gz)')
     parser.add_argument('--config', type=str, default='benchmark_config.yaml',
                        help='Fichier de configuration')
-    parser.add_argument('--platform', type=str, choices=['pc', 'raspberry_pi4', 'raspberry_pi4_coral'],
+    parser.add_argument('--platform', type=str, choices=['pc', 'raspberry_pi4', 'raspberry_pi4_coral', 'jetson_orin'],
                        help='Plateforme (auto-détection si non spécifié)')
     
     args = parser.parse_args()

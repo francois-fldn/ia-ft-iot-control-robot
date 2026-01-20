@@ -1,4 +1,4 @@
-# 📋 Protocole Complet de Benchmarking YOLO
+# Protocole Complet de Benchmarking YOLO
 
 **Projet** : Détection de balle avec YOLO + RealSense  
 **Objectif** : Comparer les performances de modèles YOLO (FP32, FP16, INT8, pruned) sur PC, Raspberry Pi 4, et Raspberry Pi 4 + Coral TPU  
@@ -6,7 +6,7 @@
 
 ---
 
-## ✅ Prérequis
+## Prerequis
 
 ### Matériel
 - RealSense D435i (pour enregistrement)
@@ -25,7 +25,7 @@ sudo apt-get install libedgetpu1-std python3-pycoral
 
 ---
 
-## 📹 ÉTAPE 1 : Enregistrer le Dataset RealSense
+## ETAPE 1 : Enregistrer le Dataset RealSense
 
 ### 1.1 Démarrer le Publisher RealSense
 
@@ -59,21 +59,21 @@ python3 preview_dataset.py tennis_ball_dataset.pkl.gz \
     --fps 10
 ```
 
-**Contrôles** :
+**Controles** :
 - `ESPACE` : Pause/Reprendre
 - `→` / `←` : Frame suivante/précédente (en pause)
 - `S` : Sauvegarder la frame
 - `Q` / `ESC` : Quitter
 
 **Vérifications** :
-- ✅ Bounding box bien alignée sur la balle
-- ✅ Distance 3D (Z en mètres) affichée
-- ✅ Confiance > 0.3 pour la balle
-- ✅ Pas de superposition de boxes
+- Bounding box bien alignee sur la balle
+- Distance 3D (Z en metres) affichee
+- Confiance > 0.3 pour la balle
+- Pas de superposition de boxes
 
 ---
 
-## 🖥️ ÉTAPE 2 : Benchmark sur PC
+## ETAPE 2 : Benchmark sur PC
 
 ### 2.1 Activer l'Environnement Virtuel
 
@@ -117,7 +117,7 @@ benchmark_results/
 
 ---
 
-## 🍓 ÉTAPE 3 : Benchmark sur Raspberry Pi 4
+## ETAPE 3 : Benchmark sur Raspberry Pi 4
 
 ### 3.1 Transférer le Dataset
 
@@ -137,7 +137,7 @@ python3 run_benchmark.py tennis_ball_dataset.pkl.gz --platform raspberry_pi4
 
 ---
 
-## 🚀 ÉTAPE 4 : Benchmark sur Raspberry Pi 4 + Coral TPU
+## ETAPE 4 : Benchmark sur Raspberry Pi 4 + Coral TPU
 
 ### 4.1 Vérifier que le Coral est Détecté
 
@@ -156,7 +156,7 @@ python3 run_benchmark.py tennis_ball_dataset.pkl.gz --platform raspberry_pi4_cor
 
 ---
 
-## 📊 ÉTAPE 5 : Analyser les Résultats
+## ETAPE 5 : Analyser les Resultats
 
 ### 5.1 Analyse Individuelle (une plateforme)
 
@@ -195,7 +195,7 @@ python3 compare_platforms.py \
 
 ---
 
-## 🎯 Interprétation des Résultats
+## Interpretation des Resultats
 
 ### Performance (FPS)
 - **> 30 FPS** : Temps réel ✅
@@ -225,7 +225,7 @@ python3 compare_platforms.py \
 
 ---
 
-## 🐛 Dépannage
+## Depannage
 
 | Problème | Solution |
 |----------|----------|
@@ -239,7 +239,7 @@ python3 compare_platforms.py \
 
 ---
 
-## ✅ Corrections Appliquées
+## Corrections Appliquees
 
 ### 1. Format d'Entrée ONNX (NHWC → NCHW)
 **Problème** : Dimension mismatch  
@@ -279,7 +279,7 @@ scale_x = cam_w / float(self.model_w)  # Au lieu de 320.0
 
 ---
 
-## 📈 Recommandations Finales
+## Recommandations Finales
 
 ### Critères de Sélection
 
@@ -306,20 +306,20 @@ scale_x = cam_w / float(self.model_w)  # Au lieu de 320.0
 
 ---
 
-## 📂 Fichiers du Système
+## Fichiers du Systeme
 
 ```
 DETEC_BALL_PROJET/
-├── record_realsense.py           # 📹 Enregistrer données RealSense
-├── preview_dataset.py             # 👀 Prévisualiser + détection live
-├── ball_detector.py               # 🤖 Détecteur TFLite/ONNX
-├── run_benchmark.py               # 🎯 Orchestrateur de benchmark
-├── analyze_results.py             # 📊 Analyse individuelle
-├── compare_platforms.py           # 🔄 Comparaison multi-plateformes
-├── benchmark_config.yaml          # ⚙️ Configuration
-├── README.md                      # 📚 Documentation
-├── BENCHMARK_PROTOCOL.md          # 📋 Ce fichier
-└── modeles_yolo/                  # 🤖 Modèles à tester
+├── record_realsense.py           # Enregistrer donnees RealSense
+├── preview_dataset.py             # Previsualiser + detection live
+├── ball_detector.py               # Detecteur TFLite/ONNX
+├── run_benchmark.py               # Orchestrateur de benchmark
+├── analyze_results.py             # Analyse individuelle
+├── compare_platforms.py           # Comparaison multi-plateformes
+├── benchmark_config.yaml          # Configuration
+├── README.md                      # Documentation
+├── BENCHMARK_PROTOCOL.md          # Ce fichier
+└── modeles_yolo/                  # Modeles a tester
     ├── 256/
     ├── 320/
     ├── 256_pruned/
