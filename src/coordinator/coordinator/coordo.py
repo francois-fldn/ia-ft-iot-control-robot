@@ -47,7 +47,7 @@ class Coordo(Node):
     def ball_scan_callback(self, msg):
         prev_state = self.state
 
-        if (self.goal_achieved): 
+        if (self.goal_achieved or self.state == STATE_GO): 
             return
 
         if (msg.point.x == 1000):
@@ -80,7 +80,7 @@ class Coordo(Node):
             now = datetime.now()
             delta = now - self.start_timer
 
-            if delta.seconds >= 10: # une petite attente le temps que la simu se lance
+            if delta.seconds >= 20: # une petite attente le temps que la simu se lance
                 self.state = STATE_ROTATE
                 msg.data = self.state
                 self.state_publisher.publish(msg)
@@ -118,7 +118,7 @@ class Coordo(Node):
             now = datetime.now()
             delta = now - self.start_timer
 
-            if delta.seconds >= 2:
+            if delta.seconds >= 4:
                 self.state = STATE_STOP
                 msg.data = self.state
                 self.state_publisher.publish(msg)
