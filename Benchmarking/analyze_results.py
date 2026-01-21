@@ -1,434 +1,455 @@
 #!/usr/bin/env python3
 """
-Script d'analyse et visualisation des résultats de benchmarking
-Génère des graphiques 
+Script d'analyse et visualisation des resultats de benchmarking
+- Graphiques separes pour modeles standard et prunes
+- Code couleur: TFLite vs ONNX
+- Metriques: temps d'inference, FPS, memoire, confiance, FPS/Watt
+- Comparaison Pi4 vs Coral
+- Scatter plots memoire/FPS et temps d'inference
+- Consommation electrique avec soustraction de la consommation a vide
 """
 
 import json
 import pandas as pd
 import matplotlib.pyplot as plt
-import seaborn as sns
+import numpy as np
+import glob
+import os
 from pathlib import Path
 import argparse
-from datetime import datetime
-import numpy as np
 
 
-class BenchmarkAnalyzer:
-    # Analyseur de résultats de benchmarking
+# Configuration des couleurs par type de runtime
+COULEURS = {
+    'tflite': '#2196F3',  # Bleu
+    'onnx': '#FF9800',    # Orange
+    'edgetpu': '#4CAF50'  # Vert pour Coral
+}
+
+# Couleurs par plateforme
+COULEURS_PLATEFORME = {
+    'raspberry_pi4': '#2196F3',      # Bleu
+    'raspberry_pi4_coral': '#4CAF50', # Vert
+    'Pi4': '#2196F3',
+    'Coral': '#4CAF50'
+}
+
+# Tension pour le calcul de puissance (5V pour Pi)
+TENSION = 5.0
+
+# Modeles selectionnes pour la comparaison Pi4 vs Coral
+MODELES_PI4_COMPARAISON = [
+    'best-fp16_256_pruned.onnx', 'best-fp32_256_pruned.onnx',
+    'best-int8_320.tflite', 'best-int8_256.tflite',
+    'best-int8_320_pruned.tflite', 'best-int8_256_pruned.tflite'
+]
+
+MODELES_CORAL = [
+    'best-int8_edgetpu256.tflite', 'best-int8_edgetpu320.tflite',
+    'best-int8_256_pruned_edgetpu.tflite', 'best-int8_320_pruned_edgetpu.tflite'
+]
+
+
+def charger_tous_les_runs(dossier: str) -> pd.DataFrame:
+    # Charge tous les fichiers CSV de benchmark d'un dossier
+    fichiers_csv = sorted(glob.glob(os.path.join(dossier, "benchmark_results_*.csv")))
     
-    def __init__(self, results_path: str):
-        # Args: results_path: Chemin vers le fichier JSON ou le dossier de résultats
-
-        self.results_path = Path(results_path)
-        self.df = self._load_and_aggregate_results()
-        
-        if self.results_path.is_dir():
-            self.output_dir = self.results_path / "plots"
-        else:
-            self.output_dir = self.results_path.parent / "plots"
-        self.output_dir.mkdir(exist_ok=True)
-        
-        sns.set_style("whitegrid")
-        plt.rcParams['figure.figsize'] = (12, 6)
+    toutes_donnees = []
+    for i, fichier_csv in enumerate(fichiers_csv):
+        df = pd.read_csv(fichier_csv)
+        df['run_id'] = i + 1
+        toutes_donnees.append(df)
     
-    def _load_and_aggregate_results(self) -> pd.DataFrame:
-        # Charge, agrège les résultats et ajoute la consommation
-        all_data = []
-        
-        if self.results_path.is_dir():
-            files = list(self.results_path.glob("benchmark_results_*.json"))
-            if not files:
-                raise ValueError(f"Aucun fichier JSON trouvé dans {self.results_path}")
-            print(f"Chargement de {len(files)} fichiers de resultats...")
-            for f in files:
-                with open(f, 'r') as json_file:
-                    all_data.extend(json.load(json_file))
-        elif self.results_path.suffix == '.json':
-            with open(self.results_path, 'r') as f:
-                all_data = json.load(f)
-        else:
-            raise ValueError(f"Format non supporté: {self.results_path}")
-
-        df_raw = pd.DataFrame(all_data)
-        
-        # Agréger par modèle (Moyenne des répétitions)
-        meta_cols = ['model_name', 'model_path', 'model_directory', 'model_type', 
-                    'input_size', 'is_edgetpu', 'runtime', 'platform', 'timestamp']
-
-        all_numeric = df_raw.select_dtypes(include=[np.number]).columns.tolist()
-        numeric_cols = [c for c in all_numeric if c not in meta_cols]
-        
-        print("Aggregation des repetitions (moyenne/std)...")
-        # Grouper et calculer moyenne + écart-type
-        df_agg = df_raw.groupby('model_name')[numeric_cols].agg(['mean', 'std']).reset_index()
-        
-        new_cols = ['model_name']
-        for col in numeric_cols:
-            new_cols.append(col) 
-            new_cols.append(f"{col}_std_dev") 
-        
-        df_agg.columns = ['model_name'] + [f"{col[0]}_std_dev" if col[1]=='std' else col[0] for col in df_agg.columns[1:]]
-        
-        # Récupérer les métadonnées (prendre la première occurrence)
-        df_meta = df_raw.drop_duplicates(subset=['model_name'])[meta_cols]
-        df_final = pd.merge(df_meta, df_agg, on='model_name')
-        
-        # Ajouter la consommation électrique
-        conso_file = None
-        if self.results_path.is_dir():
-            conso_file = self.results_path / "benchmark_conso_Amp.json"
-        else:
-            conso_file = self.results_path.parent / "benchmark_conso_Amp.json"
-            
-        if conso_file.exists():
-            print(f"Chargement de la consommation: {conso_file.name}")
-            with open(conso_file, 'r') as f:
-                conso_data = json.load(f)
-            
-            # Créer un dict pour mapping 
-            conso_map = {item['model_name']: item for item in conso_data}
-            
-            powers = []
-            efficiencies = []
-            
-            for _, row in df_final.iterrows():
-                model = row['model_name']
-                if model in conso_map:
-                    # Amps -> Watts (5V pour RPi/Coral USB)
-                    amps = conso_map[model].get('conso_ampere_mean', 0)
-                    watts = amps * 5.0
-                    powers.append(watts)
-                    
-                    # Efficacité (FPS / Watt)
-                    eff = row['fps_mean'] / watts if watts > 0 else 0
-                    efficiencies.append(eff)
-                else:
-                    powers.append(0)
-                    efficiencies.append(0)
-            
-            df_final['power_watts'] = powers
-            df_final['efficiency_fps_watt'] = efficiencies
-        else:
-            print("Fichier benchmark_conso_Amp.json introuvable")
-            df_final['power_watts'] = 0
-            df_final['efficiency_fps_watt'] = 0
-            
-        return df_final
+    if not toutes_donnees:
+        return pd.DataFrame()
     
-    def plot_inference_time_comparison(self):
-        # Compare les temps d'inférence entre modèles
+    return pd.concat(toutes_donnees, ignore_index=True)
+
+
+def normaliser_nom_modele(nom: str) -> str:
+    # Normalise le nom du modele pour gerer les inconsistances best_ vs best-
+    if nom.startswith('best_'):
+        nom = 'best-' + nom[5:]
+    return nom
+
+
+def charger_consommation(chemin_json: str) -> tuple:
+    # Charge les donnees de consommation et retourne un dict avec model_name comme cle
+    if not os.path.exists(chemin_json):
+        return {}, 0.0
+        
+    with open(chemin_json, 'r') as f:
+        donnees = json.load(f)
+    
+    dict_puissance = {}
+    puissance_idle = 0.0
+    
+    for entree in donnees:
+        nom_modele = entree.get('model_name', '')
+        if nom_modele == 'None':
+            # Consommation a vide - utiliser moyenne de min/max
+            puissance_idle = (entree.get('conso_ampere_max', 0) + entree.get('conso_ampere_min', 0)) / 2
+        else:
+            # Stocker avec nom normalise comme cle
+            dict_puissance[normaliser_nom_modele(nom_modele)] = entree.get('conso_ampere_mean', 0)
+    
+    return dict_puissance, puissance_idle
+
+
+def obtenir_nom_court(nom_modele: str) -> str:
+    # Extrait le nom court du fichier modele
+    nom = nom_modele.replace('best-', '').replace('best_', '')
+    nom = nom.replace('.tflite', '').replace('.onnx', '')
+    return nom
+
+
+def calculer_stats_par_modele(df: pd.DataFrame) -> pd.DataFrame:
+    # Calcule moyenne et ecart-type sur les runs pour chaque modele
+    metriques = ['inference_time_mean', 'fps_mean', 'memory_usage_mean', 
+                 'max_confidence_mean', 'total_time_mean']
+    
+    groupe = df.groupby('model_name').agg({
+        **{m: ['mean', 'std'] for m in metriques},
+        'runtime': 'first',
+        'model_type': 'first',
+        'input_size': 'first',
+        'is_edgetpu': 'first'
+    }).reset_index()
+    
+    # Aplatir les noms de colonnes
+    groupe.columns = ['_'.join(col).strip('_') if isinstance(col, tuple) else col 
+                      for col in groupe.columns]
+    
+    return groupe
+
+
+def ajouter_donnees_puissance(stats: pd.DataFrame, dict_puissance: dict, 
+                               puissance_idle: float) -> pd.DataFrame:
+    # Ajoute les colonnes de puissance et FPS/Watt au DataFrame
+    stats = stats.copy()
+    stats['puissance_amps'] = stats['model_name'].apply(
+        lambda x: dict_puissance.get(normaliser_nom_modele(x), np.nan))
+    stats['puissance_nette_amps'] = stats['puissance_amps'] - puissance_idle
+    stats['puissance_watts'] = stats['puissance_nette_amps'] * TENSION
+    stats['fps_par_watt'] = stats['fps_mean_mean'] / stats['puissance_watts']
+    stats['nom_court'] = stats['model_name'].apply(obtenir_nom_court)
+    stats['type_runtime'] = stats.apply(
+        lambda r: 'edgetpu' if r['is_edgetpu_first'] else r['runtime_first'], axis=1)
+    return stats
+
+
+def tracer_metriques_plateforme(stats: pd.DataFrame, dossier_sortie: str, 
+                                 prefixe: str = "pi4"):
+    # Genere les graphiques avec separation standard/prunes pour une plateforme
+    
+    # Separer standard et prune
+    prunes = stats[stats['model_type_first'] == 'pruned'].copy()
+    standard = stats[stats['model_type_first'] == 'standard'].copy()
+    
+    # Trier par FPS
+    prunes = prunes.sort_values('fps_mean_mean', ascending=True)
+    standard = standard.sort_values('fps_mean_mean', ascending=True)
+    
+    # Metriques a tracer
+    config_metriques = [
+        ('inference_time_mean_mean', 'inference_time_mean_std', 
+         'Temps d\'inference (ms)', 'inference_time'),
+        ('fps_mean_mean', 'fps_mean_std', 'FPS', 'fps'),
+        ('memory_usage_mean_mean', 'memory_usage_mean_std', 
+         'Utilisation memoire (MB)', 'memory'),
+        ('max_confidence_mean_mean', 'max_confidence_mean_std', 
+         'Score de confiance', 'confidence'),
+        ('fps_par_watt', None, 'FPS/Watt (Puissance nette)', 'fps_per_watt'),
+    ]
+    
+    for donnees, suffixe in [(standard, 'standard'), (prunes, 'pruned')]:
+        if donnees.empty:
+            continue
+            
+        for col_moyenne, col_std, label_y, nom_fichier in config_metriques:
+            fig, ax = plt.subplots(figsize=(12, 7))
+            
+            pos_y = np.arange(len(donnees))
+            couleurs = [COULEURS.get(rt, '#888888') for rt in donnees['type_runtime']]
+            
+            barres = ax.barh(pos_y, donnees[col_moyenne], color=couleurs, alpha=0.8, height=0.6)
+            
+            # Barres d'erreur
+            if col_std and col_std in donnees.columns:
+                ax.errorbar(donnees[col_moyenne], pos_y, xerr=donnees[col_std], 
+                           fmt='none', color='black', capsize=3, capthick=1)
+            
+            ax.set_yticks(pos_y)
+            ax.set_yticklabels(donnees['nom_court'], fontsize=10)
+            ax.set_xlabel(label_y, fontsize=12)
+            
+            titre_type = "Prunes" if suffixe == "pruned" else "Standard"
+            ax.set_title(f'{label_y} (Modeles {titre_type})', fontsize=14, fontweight='bold')
+            
+            # Valeurs sur les barres
+            for barre, val in zip(barres, donnees[col_moyenne]):
+                if not np.isnan(val):
+                    ax.text(val + ax.get_xlim()[1] * 0.01, barre.get_y() + barre.get_height()/2,
+                           f'{val:.2f}', va='center', fontsize=9)
+            
+            # Legende
+            from matplotlib.patches import Patch
+            elements_legende = [
+                Patch(facecolor=COULEURS['tflite'], label='TFLite'),
+                Patch(facecolor=COULEURS['onnx'], label='ONNX')
+            ]
+            ax.legend(handles=elements_legende, loc='lower right')
+            
+            ax.grid(axis='x', alpha=0.3)
+            plt.tight_layout()
+            plt.savefig(os.path.join(dossier_sortie, f'{prefixe}_{nom_fichier}_{suffixe}.png'), dpi=150)
+            plt.close()
+            print(f"Sauvegarde: {prefixe}_{nom_fichier}_{suffixe}.png")
+
+
+def tracer_comparaison_coral(stats_pi4: pd.DataFrame, stats_coral: pd.DataFrame,
+                              dossier_sortie: str):
+    # Compare Pi4 et Coral sur les modeles selectionnes
+    
+    # Filtrer les modeles de comparaison
+    pi4_filtre = stats_pi4[stats_pi4['model_name'].isin(MODELES_PI4_COMPARAISON)].copy()
+    coral_filtre = stats_coral[stats_coral['model_name'].isin(MODELES_CORAL)].copy()
+    
+    if pi4_filtre.empty and coral_filtre.empty:
+        print("Aucun modele de comparaison trouve")
+        return
+    
+    # Ajouter la plateforme
+    pi4_filtre['plateforme'] = 'Pi4'
+    coral_filtre['plateforme'] = 'Coral'
+    
+    # Combiner
+    combine = pd.concat([pi4_filtre, coral_filtre], ignore_index=True)
+    combine = combine.sort_values('fps_mean_mean', ascending=True)
+    
+    # Metriques de comparaison
+    config_metriques = [
+        ('inference_time_mean_mean', 'inference_time_mean_std', 
+         'Temps d\'inference (ms)', 'comparison_inference_time'),
+        ('fps_mean_mean', 'fps_mean_std', 'FPS', 'comparison_fps'),
+        ('memory_usage_mean_mean', 'memory_usage_mean_std', 
+         'Utilisation memoire (MB)', 'comparison_memory'),
+        ('max_confidence_mean_mean', 'max_confidence_mean_std', 
+         'Score de confiance', 'comparison_confidence'),
+        ('fps_par_watt', None, 'FPS/Watt (Puissance nette)', 'comparison_fps_per_watt'),
+    ]
+    
+    for col_moyenne, col_std, label_y, nom_fichier in config_metriques:
         fig, ax = plt.subplots(figsize=(14, 8))
         
-        df_sorted = self.df.sort_values('inference_time_mean')
+        pos_y = np.arange(len(combine))
+        couleurs = [COULEURS_PLATEFORME.get(p, '#888888') for p in combine['plateforme']]
         
-        df_sorted['label'] = df_sorted.apply(
-            lambda x: f"{x['model_name'].replace('.tflite', '')}\n({x['input_size']})", 
-            axis=1
-        )
+        # Labels avec plateforme
+        labels = [f"{row['nom_court']}\n({row['plateforme']})" for _, row in combine.iterrows()]
         
-        # Barplot avec barres d'erreur
-        x_pos = np.arange(len(df_sorted))
-        bars = ax.bar(x_pos, df_sorted['inference_time_mean'], 
-                     yerr=df_sorted['inference_time_std'],
-                     capsize=5, alpha=0.7)
+        barres = ax.barh(pos_y, combine[col_moyenne], color=couleurs, alpha=0.8, height=0.7)
         
-        # Colorer selon le type
-        colors = []
-        for _, row in df_sorted.iterrows():
-            if row['is_edgetpu']:
-                colors.append('green')
-            elif 'pruned' in row['model_type']:
-                colors.append('orange')
-            else:
-                colors.append('blue')
+        # Barres d'erreur
+        if col_std and col_std in combine.columns:
+            ax.errorbar(combine[col_moyenne], pos_y, xerr=combine[col_std], 
+                       fmt='none', color='black', capsize=3, capthick=1)
         
-        for bar, color in zip(bars, colors):
-            bar.set_color(color)
+        ax.set_yticks(pos_y)
+        ax.set_yticklabels(labels, fontsize=9)
+        ax.set_xlabel(label_y, fontsize=12)
+        ax.set_title(f'Pi4 vs Coral - {label_y}', fontsize=14, fontweight='bold')
         
-        ax.set_xlabel('Modèle', fontsize=12)
-        ax.set_ylabel('Temps d\'inférence (ms)', fontsize=12)
-        ax.set_title('Comparaison des temps d\'inférence', fontsize=14, fontweight='bold')
-        ax.set_xticks(x_pos)
-        ax.set_xticklabels(df_sorted['label'], rotation=45, ha='right', fontsize=9)
+        # Valeurs
+        for barre, val in zip(barres, combine[col_moyenne]):
+            if not np.isnan(val):
+                ax.text(val + ax.get_xlim()[1] * 0.01, barre.get_y() + barre.get_height()/2,
+                       f'{val:.2f}', va='center', fontsize=9)
         
-        # Légende
+        # Legende
         from matplotlib.patches import Patch
-        legend_elements = [
-            Patch(facecolor='blue', label='Standard'),
-            Patch(facecolor='orange', label='Pruned'),
-            Patch(facecolor='green', label='EdgeTPU')
+        elements_legende = [
+            Patch(facecolor=COULEURS_PLATEFORME['Pi4'], label='Pi4 (CPU)'),
+            Patch(facecolor=COULEURS_PLATEFORME['Coral'], label='Pi4 + Coral TPU')
         ]
-        ax.legend(handles=legend_elements, loc='upper left')
+        ax.legend(handles=elements_legende, loc='lower right')
         
+        ax.grid(axis='x', alpha=0.3)
         plt.tight_layout()
-        save_path = self.output_dir / "inference_time_comparison.png"
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"Graphique sauvegarde: {save_path}")
+        plt.savefig(os.path.join(dossier_sortie, f'{nom_fichier}.png'), dpi=150)
         plt.close()
-    
-    def plot_fps_comparison(self):
-        # Compare les FPS entre modèles
-        fig, ax = plt.subplots(figsize=(14, 8))
-        
-        df_sorted = self.df.sort_values('fps_mean', ascending=False)
-        
-        df_sorted['label'] = df_sorted.apply(
-            lambda x: f"{x['model_name'].replace('.tflite', '')}\n({x['input_size']})", 
-            axis=1
-        )
-        
-        x_pos = np.arange(len(df_sorted))
-        bars = ax.bar(x_pos, df_sorted['fps_mean'], alpha=0.7)
-        
-        # Colorer
-        colors = []
-        for _, row in df_sorted.iterrows():
-            if row['is_edgetpu']:
-                colors.append('green')
-            elif 'pruned' in row['model_type']:
-                colors.append('orange')
-            else:
-                colors.append('blue')
-        
-        for bar, color in zip(bars, colors):
-            bar.set_color(color)
-        
-        ax.set_xlabel('Modèle', fontsize=12)
-        ax.set_ylabel('FPS', fontsize=12)
-        ax.set_title('Comparaison des FPS', fontsize=14, fontweight='bold')
-        ax.set_xticks(x_pos)
-        ax.set_xticklabels(df_sorted['label'], rotation=45, ha='right', fontsize=9)
-        
-        plt.tight_layout()
-        save_path = self.output_dir / "fps_comparison.png"
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"Graphique sauvegarde: {save_path}")
-        plt.close()
-    
-    def plot_memory_usage(self):
-        # Compare l'utilisation mémoire
-        fig, ax = plt.subplots(figsize=(14, 8))
-        
-        df_sorted = self.df.sort_values('memory_usage_mean')
-        
-        df_sorted['label'] = df_sorted.apply(
-            lambda x: f"{x['model_name'].replace('.tflite', '')}", 
-            axis=1
-        )
-        
-        x_pos = np.arange(len(df_sorted))
-        ax.bar(x_pos, df_sorted['memory_usage_mean'], alpha=0.7, label='Moyenne')
-        ax.scatter(x_pos, df_sorted['memory_usage_max'], color='red', marker='x', s=100, label='Max')
-        
-        ax.set_xlabel('Modèle', fontsize=12)
-        ax.set_ylabel('Utilisation mémoire (MB)', fontsize=12)
-        ax.set_title('Utilisation mémoire', fontsize=14, fontweight='bold')
-        ax.set_xticks(x_pos)
-        ax.set_xticklabels(df_sorted['label'], rotation=45, ha='right', fontsize=9)
-        ax.legend()
-        
-        plt.tight_layout()
-        save_path = self.output_dir / "memory_usage.png"
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"Graphique sauvegarde: {save_path}")
-        plt.close()
-    
-    def plot_cpu_usage(self):
-        # Compare l'utilisation CPU
-        fig, ax = plt.subplots(figsize=(14, 8))
-        
-        df_sorted = self.df.sort_values('cpu_usage_mean')
-        
-        df_sorted['label'] = df_sorted.apply(
-            lambda x: f"{x['model_name'].replace('.tflite', '')}", 
-            axis=1
-        )
-        
-        x_pos = np.arange(len(df_sorted))
-        ax.bar(x_pos, df_sorted['cpu_usage_mean'], alpha=0.7, label='Moyenne')
-        ax.scatter(x_pos, df_sorted['cpu_usage_max'], color='red', marker='x', s=100, label='Max')
-        
-        ax.set_xlabel('Modèle', fontsize=12)
-        ax.set_ylabel('Utilisation CPU (%)', fontsize=12)
-        ax.set_title('Utilisation CPU', fontsize=14, fontweight='bold')
-        ax.set_xticks(x_pos)
-        ax.set_xticklabels(df_sorted['label'], rotation=45, ha='right', fontsize=9)
-        ax.legend()
-        
-        plt.tight_layout()
-        save_path = self.output_dir / "cpu_usage.png"
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"Graphique sauvegarde: {save_path}")
-        plt.close()
-    
-    def plot_temperature(self):
-        # Compare les températures 
-        if 'temperature_mean' not in self.df.columns:
-            print("Pas de donnees de temperature disponibles")
-            return
-        
-        df_temp = self.df.dropna(subset=['temperature_mean'])
-        if df_temp.empty:
-            print("Pas de donnees de temperature disponibles")
-            return
-        
-        fig, ax = plt.subplots(figsize=(14, 8))
-        
-        df_sorted = df_temp.sort_values('temperature_mean')
-        
-        df_sorted['label'] = df_sorted.apply(
-            lambda x: f"{x['model_name'].replace('.tflite', '')}", 
-            axis=1
-        )
-        
-        x_pos = np.arange(len(df_sorted))
-        ax.bar(x_pos, df_sorted['temperature_mean'], alpha=0.7, label='Moyenne')
-        ax.scatter(x_pos, df_sorted['temperature_max'], color='red', marker='x', s=100, label='Max')
-        
-        ax.set_xlabel('Modèle', fontsize=12)
-        ax.set_ylabel('Température (°C)', fontsize=12)
-        ax.set_title('Température du système', fontsize=14, fontweight='bold')
-        ax.set_xticks(x_pos)
-        ax.set_xticklabels(df_sorted['label'], rotation=45, ha='right', fontsize=9)
-        ax.legend()
-        
-        plt.tight_layout()
-        save_path = self.output_dir / "temperature.png"
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"Graphique sauvegarde: {save_path}")
-        plt.close()
-    
-    def plot_efficiency_scatter(self):
-        # Graphique scatter: FPS vs Utilisation mémoire
-        fig, ax = plt.subplots(figsize=(12, 8))
-        
-        scatter = ax.scatter(self.df['memory_usage_mean'], 
-                           self.df['fps_mean'],
-                           s=200, alpha=0.6, c=self.df['inference_time_mean'],
-                           cmap='viridis')
-        
-        for _, row in self.df.iterrows():
-            label = row['model_name'].replace('.tflite', '').replace('best-', '')
-            ax.annotate(label, 
-                       (row['memory_usage_mean'], row['fps_mean']),
-                       fontsize=8, ha='center')
-        
-        ax.set_xlabel('Utilisation mémoire moyenne (MB)', fontsize=12)
-        ax.set_ylabel('FPS moyen', fontsize=12)
-        ax.set_title('Efficacité: FPS vs Mémoire', fontsize=14, fontweight='bold')
-        
-        cbar = plt.colorbar(scatter, ax=ax)
-        cbar.set_label('Temps d\'inférence (ms)', fontsize=10)
-        
-        plt.tight_layout()
-        save_path = self.output_dir / "efficiency_scatter.png"
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"Graphique sauvegarde: {save_path}")
-        plt.close()
-    
-    def plot_power_consumption(self):
-        # Compare la consommation électrique (Watts)
-        if 'power_watts' not in self.df.columns or self.df['power_watts'].sum() == 0:
-            print("Pas de donnees de consommation disponibles")
-            return
-            
-        fig, ax = plt.subplots(figsize=(14, 8))
-        
-        df_sorted = self.df.sort_values('power_watts')
-        
-        df_sorted['label'] = df_sorted.apply(
-            lambda x: f"{x['model_name'].replace('.tflite', '')}", 
-            axis=1
-        )
-        
-        x_pos = np.arange(len(df_sorted))
-        bars = ax.bar(x_pos, df_sorted['power_watts'], alpha=0.7, color='orange')
-        
-        ax.set_xlabel('Modèle', fontsize=12)
-        ax.set_ylabel('Consommation (Watts)', fontsize=12)
-        ax.set_title('Consommation Électrique (estimée 5V)', fontsize=14, fontweight='bold')
-        ax.set_xticks(x_pos)
-        ax.set_xticklabels(df_sorted['label'], rotation=45, ha='right', fontsize=9)
-        
-        # Ajouter les valeurs sur les barres
-        for i, v in enumerate(df_sorted['power_watts']):
-            ax.text(i, v + 0.1, f"{v:.2f}W", ha='center', fontsize=9)
-        
-        plt.tight_layout()
-        save_path = self.output_dir / "power_consumption.png"
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"Graphique sauvegarde: {save_path}")
-        plt.close()
+        print(f"Sauvegarde: {nom_fichier}.png")
 
-    def plot_efficiency_watts(self):
-        # Compare l'efficacité énergétique (FPS/Watt)
-        if 'efficiency_fps_watt' not in self.df.columns or self.df['efficiency_fps_watt'].sum() == 0:
-            print("Pas de donnees d'efficacite disponibles")
-            return
-            
-        fig, ax = plt.subplots(figsize=(14, 8))
-        
-        df_sorted = self.df.sort_values('efficiency_fps_watt', ascending=False)
-        
-        df_sorted['label'] = df_sorted.apply(
-            lambda x: f"{x['model_name'].replace('.tflite', '')}", 
-            axis=1
-        )
-        
-        x_pos = np.arange(len(df_sorted))
-        bars = ax.bar(x_pos, df_sorted['efficiency_fps_watt'], alpha=0.7, color='green')
-        
-        ax.set_xlabel('Modèle', fontsize=12)
-        ax.set_ylabel('Efficacité (FPS / Watt)', fontsize=12)
-        ax.set_title('Efficacité Énergétique', fontsize=14, fontweight='bold')
-        ax.set_xticks(x_pos)
-        ax.set_xticklabels(df_sorted['label'], rotation=45, ha='right', fontsize=9)
-        
-        for i, v in enumerate(df_sorted['efficiency_fps_watt']):
-            ax.text(i, v + 1, f"{v:.1f}", ha='center', fontsize=9)
-        
-        plt.tight_layout()
-        save_path = self.output_dir / "efficiency_fps_per_watt.png"
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"Graphique sauvegarde: {save_path}")
-        plt.close()
-        
+
+def tracer_scatter_efficiency(stats: pd.DataFrame, dossier_sortie: str, suffixe: str = "pi4"):
+    # Scatter plot: Memoire vs FPS avec couleur = temps d'inference
+    fig, ax = plt.subplots(figsize=(12, 8))
     
-    def analyze(self):
-        # Lance toutes les analyses
+    scatter = ax.scatter(
+        stats['memory_usage_mean_mean'], 
+        stats['fps_mean_mean'],
+        s=200, alpha=0.7, 
+        c=stats['inference_time_mean_mean'],
+        cmap='viridis'
+    )
+    
+    # Annotations
+    for _, row in stats.iterrows():
+        ax.annotate(
+            row['nom_court'], 
+            (row['memory_usage_mean_mean'], row['fps_mean_mean']),
+            fontsize=7, ha='center', va='bottom'
+        )
+    
+    ax.set_xlabel('Utilisation memoire moyenne (MB)', fontsize=12)
+    ax.set_ylabel('FPS moyen', fontsize=12)
+    ax.set_title('Efficacite: FPS vs Memoire', fontsize=14, fontweight='bold')
+    
+    cbar = plt.colorbar(scatter, ax=ax)
+    cbar.set_label('Temps d\'inference (ms)', fontsize=10)
+    
+    plt.tight_layout()
+    plt.savefig(os.path.join(dossier_sortie, f'scatter_efficiency_{suffixe}.png'), dpi=150)
+    plt.close()
+    print(f"Sauvegarde: scatter_efficiency_{suffixe}.png")
+
+
+def tracer_scatter_comparaison(stats_pi4: pd.DataFrame, stats_coral: pd.DataFrame,
+                                dossier_sortie: str):
+    # Scatter plot pour les modeles de comparaison Pi4 vs Coral
+    
+    # Filtrer
+    pi4_filtre = stats_pi4[stats_pi4['model_name'].isin(MODELES_PI4_COMPARAISON)].copy()
+    coral_filtre = stats_coral[stats_coral['model_name'].isin(MODELES_CORAL)].copy()
+    
+    if pi4_filtre.empty and coral_filtre.empty:
+        return
+    
+    pi4_filtre['plateforme'] = 'Pi4'
+    coral_filtre['plateforme'] = 'Coral'
+    
+    combine = pd.concat([pi4_filtre, coral_filtre], ignore_index=True)
+    
+    fig, ax = plt.subplots(figsize=(12, 8))
+    
+    # Couleurs par plateforme
+    couleurs = [COULEURS_PLATEFORME.get(p, '#888888') for p in combine['plateforme']]
+    
+    scatter = ax.scatter(
+        combine['memory_usage_mean_mean'], 
+        combine['fps_mean_mean'],
+        s=200, alpha=0.7, 
+        c=couleurs
+    )
+    
+    # Annotations
+    for _, row in combine.iterrows():
+        ax.annotate(
+            f"{row['nom_court']}", 
+            (row['memory_usage_mean_mean'], row['fps_mean_mean']),
+            fontsize=7, ha='center', va='bottom'
+        )
+    
+    ax.set_xlabel('Utilisation memoire moyenne (MB)', fontsize=12)
+    ax.set_ylabel('FPS moyen', fontsize=12)
+    ax.set_title('Comparaison Pi4 vs Coral: FPS vs Memoire', fontsize=14, fontweight='bold')
+    
+    # Legende
+    from matplotlib.patches import Patch
+    elements_legende = [
+        Patch(facecolor=COULEURS_PLATEFORME['Pi4'], label='Pi4 (CPU)'),
+        Patch(facecolor=COULEURS_PLATEFORME['Coral'], label='Pi4 + Coral TPU')
+    ]
+    ax.legend(handles=elements_legende, loc='lower right')
+    
+    plt.tight_layout()
+    plt.savefig(os.path.join(dossier_sortie, 'scatter_comparison.png'), dpi=150)
+    plt.close()
+    print(f"Sauvegarde: scatter_comparison.png")
+
+
+class AnalyseurBenchmark:
+    # Analyseur de resultats de benchmarking avec comparaison multi-plateforme
+    
+    def __init__(self, dossier_base: str):
+        # Args: dossier_base: Dossier contenant benchmark_results_pi4 et benchmark_results_coral
+        self.dossier_base = Path(dossier_base)
+        self.dossier_sortie = self.dossier_base / "plots"
+        self.dossier_sortie.mkdir(exist_ok=True)
+        
+        # Chemins des sous-dossiers
+        self.dossier_pi4 = self.dossier_base / "benchmark_results_pi4"
+        self.dossier_coral = self.dossier_base / "benchmark_results_coral"
+        
+        # Charger les donnees Pi4
+        self.df_pi4 = pd.DataFrame()
+        self.stats_pi4 = pd.DataFrame()
+        self.puissance_pi4 = {}
+        self.idle_pi4 = 0.0
+        
+        if self.dossier_pi4.exists():
+            print("Chargement des donnees Pi4...")
+            self.df_pi4 = charger_tous_les_runs(str(self.dossier_pi4))
+            if not self.df_pi4.empty:
+                print(f"  Charge {len(self.df_pi4)} lignes de {self.df_pi4['run_id'].nunique()} runs")
+                self.puissance_pi4, self.idle_pi4 = charger_consommation(
+                    str(self.dossier_pi4 / "benchmark_conso_Amp.json"))
+                if self.idle_pi4 > 0:
+                    print(f"  Consommation idle: {self.idle_pi4:.3f}A ({self.idle_pi4 * TENSION:.2f}W)")
+                self.stats_pi4 = calculer_stats_par_modele(self.df_pi4)
+                self.stats_pi4 = ajouter_donnees_puissance(self.stats_pi4, self.puissance_pi4, self.idle_pi4)
+        
+        # Charger les donnees Coral
+        self.df_coral = pd.DataFrame()
+        self.stats_coral = pd.DataFrame()
+        self.puissance_coral = {}
+        self.idle_coral = 0.0
+        
+        if self.dossier_coral.exists():
+            print("Chargement des donnees Coral...")
+            self.df_coral = charger_tous_les_runs(str(self.dossier_coral))
+            if not self.df_coral.empty:
+                print(f"  Charge {len(self.df_coral)} lignes de {self.df_coral['run_id'].nunique()} runs")
+                self.puissance_coral, self.idle_coral = charger_consommation(
+                    str(self.dossier_coral / "benchmark_conso_Amp.json"))
+                if self.idle_coral > 0:
+                    print(f"  Consommation idle: {self.idle_coral:.3f}A ({self.idle_coral * TENSION:.2f}W)")
+                self.stats_coral = calculer_stats_par_modele(self.df_coral)
+                self.stats_coral = ajouter_donnees_puissance(self.stats_coral, self.puissance_coral, self.idle_coral)
+    
+    def analyser(self):
+        # Lance toutes les analyses et genere les graphiques
         print(f"\n{'='*60}")
-        print(f"Analyse des résultats: {self.results_path.name}")
+        print(f"Analyse des resultats de benchmarking")
         print(f"{'='*60}\n")
         
-        print("Generation des graphiques...")
-        self.plot_inference_time_comparison()
-        self.plot_fps_comparison()
-        self.plot_memory_usage()
-        self.plot_cpu_usage()
-        self.plot_temperature()
-        self.plot_power_consumption()
-        self.plot_efficiency_watts()
-        self.plot_efficiency_scatter()
+        # Graphiques Pi4
+        if not self.stats_pi4.empty:
+            print("--- Graphiques Pi4 ---")
+            tracer_metriques_plateforme(self.stats_pi4, str(self.dossier_sortie), "pi4")
+            tracer_scatter_efficiency(self.stats_pi4, str(self.dossier_sortie), "pi4_all")
         
-        print("\nGeneration du rapport HTML...")
-        self.generate_html_report()
+        # Comparaison Pi4 vs Coral
+        if not self.stats_pi4.empty and not self.stats_coral.empty:
+            print("\n--- Comparaison Pi4 vs Coral ---")
+            tracer_comparaison_coral(self.stats_pi4, self.stats_coral, str(self.dossier_sortie))
+            tracer_scatter_comparaison(self.stats_pi4, self.stats_coral, str(self.dossier_sortie))
         
         print(f"\n{'='*60}")
         print(f"Analyse terminee!")
-        print(f"Graphiques dans: {self.output_dir}")
+        print(f"Graphiques dans: {self.dossier_sortie}")
         print(f"{'='*60}")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Analyse des résultats de benchmarking")
+    parser = argparse.ArgumentParser(description="Analyse des resultats de benchmarking")
     parser.add_argument('results', type=str, 
-                       help='Chemin vers le fichier de résultats (JSON ou CSV)')
+                       help='Dossier benchmark_results contenant benchmark_results_pi4 et benchmark_results_coral')
     
     args = parser.parse_args()
     
-    analyzer = BenchmarkAnalyzer(args.results)
-    analyzer.analyze()
+    analyseur = AnalyseurBenchmark(args.results)
+    analyseur.analyser()
 
 
 if __name__ == '__main__':

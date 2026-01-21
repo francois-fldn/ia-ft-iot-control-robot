@@ -288,7 +288,7 @@ def main():
     parser.add_argument('dataset', type=str, help='Chemin vers le dataset RealSense (.pkl.gz)')
     parser.add_argument('--config', type=str, default='benchmark_config.yaml',
                        help='Fichier de configuration')
-    parser.add_argument('--platform', type=str, choices=['pc', 'raspberry_pi4', 'raspberry_pi4_coral', 'jetson_orin'],
+    parser.add_argument('--platform', type=str, choices=['pc', 'raspberry_pi4', 'raspberry_pi4_coral'],
                        help='Plateforme (auto-détection si non spécifié)')
     
     args = parser.parse_args()

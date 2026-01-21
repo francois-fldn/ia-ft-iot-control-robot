@@ -33,11 +33,6 @@ platforms:
     use_edgetpu: true
     supports_onnx: false  # Seulement TFLite EdgeTPU
 
-  jetson_orin:
-    name: "NVIDIA Jetson Orin"
-    use_edgetpu: false
-    supports_onnx: true
-
 
 # Paramètres de benchmark
 benchmark:

@@ -24,6 +24,9 @@ python3 record_realsense.py --output tennis_ball_dataset.pkl.gz --frames 300
 **Prévisualiser le dataset:**
 ```bash
 python3 preview_dataset.py tennis_ball_dataset.pkl.gz
+
+# Avec visualisation de la bounding box :
+python3 preview_dataset.py tennis_ball_dataset.pkl.gz --detect modeles_yolo/256/best-int8_256.tflite
 ```
 
 ### 2. Installer les dependances
@@ -40,37 +43,19 @@ sudo apt-get update && sudo apt-get install libedgetpu1-std python3-pycoral
 
 ### 3. Lancer le benchmark
 
-- 24 modèles pour Raspberry Pi 4, PC et Jetson
+- 24 modèles pour Raspberry Pi 4 et PC
 - 4 modèles pour Coral TPU
 
 ```bash
 python3 run_benchmark.py tennis_ball_dataset.pkl.gz --platform pc
 python3 run_benchmark.py tennis_ball_dataset.pkl.gz --platform raspberry_pi4
 python3 run_benchmark.py tennis_ball_dataset.pkl.gz --platform raspberry_pi4_coral
-python3 run_benchmark.py tennis_ball_dataset.pkl.gz --platform jetson_orin
 ```
 
 ### 4. Analyser les resultats
 
-#### Analyse d'un benchmark unique
-```bash
-# Analyse d'un seul fichier JSON
-python3 analyze_results.py benchmark_results/benchmark_results_TIMESTAMP.json
-```
-
 #### Analyse avec agregation (plusieurs repetitions)
-Pour améliorer la fiabilité des résultats, exécutez le benchmark **10 fois** et analysez la moyenne :
-
-```bash
-# 1. Répéter le benchmark 10 fois
-for i in {1..10}; do
-    python3 run_benchmark.py tennis_ball_dataset.pkl.gz
-done
-
-# 2. Analyser le dossier entier (calcule automatiquement moyenne + écart-type)
-python3 analyze_results.py benchmark_results/benchmark_results_PLATFORM/
-
-```
+Pour améliorer la fiabilité des résultats, exécutez le benchmark **10 fois**.
 
 **Avantages de l'agrégation :**
 - **Moyenne** : Valeur representative de la performance
@@ -93,22 +78,20 @@ Exemple de structure attendue pour `benchmark_conso_Amp.json` :
 ]
 ```
 
-**Graphiques générés :**
-- `power_consumption.png` : Consommation en Watts par modèle
-- `efficiency_fps_per_watt.png` : Efficacité (FPS/W)
+#### Comparer Pi4 et Coral (tout-en-un)
 
-#### Comparer plusieurs plateformes
+Analyse complète avec comparaison Pi4 vs Coral, avec ecart-type sur les 10 repetitions:
+
 ```bash
-# Analyser et comparer 2 plateformes
-python3 compare_platforms.py benchmark_results/benchmark_results_pi4/ benchmark_results/benchmark_results_coral/
+# Analyse complète avec comparaison Pi4 vs Coral
+python3 analyze_results.py benchmark_results/
+```
 
-
-**Graphiques de comparaison générés :**
-- Temps d'inférence par plateforme
-- FPS par plateforme
-- Speedup relatif (heatmap)
-- Consommation électrique (si disponible)
-- Efficacité énergétique (FPS/Watt)
+**Graphiques générés dans `benchmark_results/plots/` :**
+- `pi4_*.png` : Métriques Pi4 (séparées standard/pruned)
+- `comparison_*.png` : Comparaison Pi4 vs Coral
+- `scatter_efficiency_pi4_all.png` : Scatter plot FPS vs Mémoire (tous modèles Pi4)
+- `scatter_comparison.png` : Scatter plot FPS vs Mémoire (modèles de comparaison)
 
 
 ---
@@ -144,7 +127,6 @@ DETEC_BALL_PROJET/
 ├── ball_detector.py          # Detecteur TFLite/ONNX
 ├── run_benchmark.py          # Lancer le benchmark
 ├── analyze_results.py        # Analyser les resultats
-├── compare_platforms.py      # Comparer plateformes
 ├── benchmark_config.yaml     # Configuration
 └── modeles_yolo/            # Modeles (256, 320, pruned)
     ├── 256/
@@ -199,9 +181,6 @@ Le système teste automatiquement:
 - **analyze_results.py** : Visualisation
   - Graphiques comparatifs (PNG)
 
-- **compare_platforms.py** : Comparaison multi-plateforme
-  - Heatmap de speedup
-  - Tableaux comparatifs
 
 ---
 

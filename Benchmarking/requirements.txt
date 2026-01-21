@@ -18,15 +18,12 @@ tflite-runtime>=2.5.0
 
 # ONNX Runtime (avec support XNNPACK pour ARM)
 onnxruntime>=1.10.0
-# Pour Jetson Orin (GPU), installer onnxruntime-gpu à la place
-onnxruntime-gpu>=1.10.0
 
-# ROS2 dependencies (déjà installées avec ROS2)
-# rclpy
-# sensor_msgs
-# cv_bridge
+rclpy
+sensor_msgs
+cv_bridge
 
-# Pour Coral TPU (Raspberry Pi uniquement, installer manuellement)
-# Suivre les instructions: https://coral.ai/docs/accelerator/get-started/
-# pycoral
-# tflite-runtime (version Coral)
+# Coral TPU support (Raspberry Pi uniquement)
+pycoral
+
+

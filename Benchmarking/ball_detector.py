@@ -126,20 +126,8 @@ class BallDetectorBenchmark:
             # Providers: XNNPACK pour ARM, CPU sinon
             providers = ['CPUExecutionProvider']
             
-            # Essayer d'utiliser GPU (CUDA/TensorRT) ou XNNPACK si disponible
+            # Essayer d'utiliser XNNPACK si disponible (ARM CPU optimization)
             available_providers = ort.get_available_providers()
-            
-            # Priorité 1: TensorRT (Jetson/NVIDIA)
-            if 'TensorrtExecutionProvider' in available_providers:
-                providers.insert(0, 'TensorrtExecutionProvider')
-                print(f"TensorRT active")
-            
-            # Priorité 2: CUDA (NVIDIA)
-            if 'CUDAExecutionProvider' in available_providers:
-                providers.insert(0, 'CUDAExecutionProvider')
-                print(f"CUDA active")
-                
-            # Priorité 3: XNNPACK (ARM CPU)
             if 'XnnpackExecutionProvider' in available_providers:
                 providers.insert(0, 'XnnpackExecutionProvider')
                 print(f"XNNPACK active")
