@@ -22,7 +22,7 @@ Le projet vise à développer un modèle IA sur turtlebot3 a destination embarqu
 - Ubuntu 22.04 (Jammy)
 - Python3 avec pip
 
-### Installer ROS2 Humble
+### Installer ROS2 Humble + Gazebo
 
 - https://foxglove.dev/blog/installing-ros2-humble-on-ubuntu (installer ros2 desktop version)
 - Aussi installer `colcon`, le compilateur ROS2
@@ -33,13 +33,18 @@ sudo apt install python3-colcon-common-extensions
 ```bash
 sudo apt install ros-humble-rmw-cyclonedds-cpp
 ```
-- Et enfin
+- Ensuite
 ```bash
 echo "source /opt/ros/humble/setup.bash" >> ~/.bashrc
 echo "export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp" >> ~/.bashrc
 source .bashrc
 printenv | grep -i ROS
 ```
+- Pour gazebo
+```bash
+sudo apt install ros-humble-ros-gz
+```
+
 ### Installer les dépendances python
 
 Installer les dépendances pour les fichiers python
