@@ -3,7 +3,6 @@ from rclpy.node import Node
 from geometry_msgs.msg import Twist, PointStamped
 from sensor_msgs.msg import LaserScan
 from std_msgs.msg import UInt8
-import random
 from datetime import datetime
 import logging
 import math
