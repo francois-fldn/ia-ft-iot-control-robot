@@ -1,6 +1,7 @@
 # Ball Detection
 
-## Objectif**: Détecter une balle dans le flux caméra (inférence TFLite) et publier sa position 3D estimée. Le détecteur utilise un modèle YOLO quantifié (`.tflite`), la profondeur et les `CameraInfo` pour reprojecter la position de la balle en coordonnées du robot.
+## Objectif
+Détecter une balle dans le flux caméra (inférence TFLite) et publier sa position 3D estimée. Le détecteur utilise un modèle YOLO quantifié (`.tflite`), la profondeur et les `CameraInfo` pour reprojecter la position de la balle en coordonnées du robot.
 
 ## Topics publiés
   - **`ball_3d`** — `geometry_msgs/PointStamped` : position 3D estimée de la balle (frame_id=`base_footprint`).
