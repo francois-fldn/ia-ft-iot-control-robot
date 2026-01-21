@@ -1,37 +1,31 @@
 # ia-ft-iot-control-robot
 
-ajouter ca au .bashrc
-`source <path>/ia-ft-iot-control-robot/ros2_packages/install/setup.bash`
+## Description du projet
 
-puis faire 
-`source .bashrc`
+Le projet vise à développer un modèle IA sur turtlebot3 a destination embarqué, plus précisement, notre modèle détecte les balles avec la Intel D435i, et le robot doit s'y diriger pour la pousser.
 
----
-## notes supplémentaires
+### Liste des packages
 
-Dans ros2_packages/tests c'est juste moi qui joue avec la lib pour comprendre quoi faire avant de le mettre en package ros
+- ball_detection: Le modèle IA qui détecte les balles
+- coordinator : l'orchestrateur de notre robot
+- realsense_publisher : le package qui permet de publier sur deux topics l'image rgb et l'image profondeur de la D435i
+- turtlebot3_wanderer : le package qui contrôle le déplacement du robot
+- turtlebot3_descriptions : les descriptions du robot pour la simulation
+- turtlebot3_gazebo : les fichiers de mondes et les modèles pour la simulation
 
-## lancer la simu
+## Démarrer le projet
 
-faire
+Installer les dépendances pour les fichiers python
+```bash
+cd src/
+pip -r install requirements.txt
 ```
-export PROJECT_MODEL=turtlebot3_burger_d435i
-colcon build
-source install/setup.bash
-```
-pour setup le projet
 
-puis
-```
-ros2 launch turtlebot3_gazebo projects_house_world.launch.py
-```
-qui lance :
-- gazebo sur un modele de maison
-- rviz
-- le modele IA
+Lancer la commande `run.sh`
 
-puis il faut lancer, dans 2 autres terminaux 
-```
-ros2 run turtlebot3_wanderer explorator
-ros2 run coordinator coordinator
-```
+
+
+## Démonstration du projet
+
+[demo.webm](https://github.com/user-attachments/assets/fa0be8ee-7a7e-4fdc-a6dd-702e5762a50f)
+
