@@ -1,4 +1,6 @@
-# ia-ft-iot-control-robot
+# Systèmes intelligents autonomes
+
+Pour toutes les informations sur le projet "Edge Computing et IA Embarquée", le contenu du projet se trouve dans le dossier `Benchmarking/`
 
 ## Description du projet
 
@@ -15,13 +17,46 @@ Le projet vise à développer un modèle IA sur turtlebot3 a destination embarqu
 
 ## Démarrer le projet
 
+### Pré-requis
+
+- Ubuntu 22.04 (Jammy)
+- Python3 avec pip
+
+### Installer ROS2 Humble
+
+- https://foxglove.dev/blog/installing-ros2-humble-on-ubuntu (installer ros2 desktop version)
+- Aussi installer `colcon`, le compilateur ROS2
+```bash
+sudo apt install python3-colcon-common-extensions
+```
+- Et cyclone DDS
+```bash
+sudo apt install ros-humble-rmw-cyclonedds-cpp
+```
+- Et enfin
+```bash
+echo "source /opt/ros/humble/setup.bash" >> ~/.bashrc
+echo "export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp" >> ~/.bashrc
+source .bashrc
+printenv | grep -i ROS
+```
+### Installer les dépendances python
+
 Installer les dépendances pour les fichiers python
 ```bash
 cd src/
 pip -r install requirements.txt
 ```
 
-Lancer la commande `run.sh`
+### Démarrer la simulation
+
+Lancer la commande 
+```bash
+./run.sh
+```
+Le robot devrait commencer a bouger après 20 secondes, ce qui permet de mettre en place la visualisation dans RVIZ
+
+Pour voir les informations importantes, allez sur `Add > By topic > /ball_debug > Image` pour afficher l'image avec la bounding box, puis `Add > By topic > /ball_marker > Marker` pour voir le marqueur de la balle dans le champ de vision du robot.
 
 
 
