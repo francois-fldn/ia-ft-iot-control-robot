@@ -15,7 +15,7 @@ class BallDetectorHybrid(Node):
     def __init__(self):
         super().__init__('ball_detector_hybrid')
 
-        # --- IA SETUP ---
+        # IA SETUP
         try:
             package_share_directory = get_package_share_directory('ball_detection')
             model_filename = 'yolov5n-int8_320.tflite' 
@@ -24,7 +24,7 @@ class BallDetectorHybrid(Node):
             self.interpreter.allocate_tensors()
             self.input_details = self.interpreter.get_input_details()
             self.output_details = self.interpreter.get_output_details()
-            self.get_logger().info(" IA Chargée (Mode CameraInfo).")
+            self.get_logger().info(" IA Chargée.")
         except Exception as e:
             self.get_logger().error(f" Erreur Init IA: {e}")
             raise e
@@ -36,24 +36,20 @@ class BallDetectorHybrid(Node):
         # Stockage des infos caméra (fx, fy, cx, cy)
         self.camera_intrinsics = None 
 
-        # --- ROS SETUP ---
+        # ROS Setup
         self.bridge = CvBridge()
-        self.pub_ball = self.create_publisher(PointStamped, 'ball_3d', 10)
-        self.pub_marker = self.create_publisher(Marker, 'ball_marker', 10)
-        self.pub_debug_img = self.create_publisher(Image, 'ball_debug', 10)
+        self.pub_ball = self.create_publisher(PointStamped, 'ball_3d', 10) # Publie les coordonnées 3D de la balle
+        self.pub_marker = self.create_publisher(Marker, 'ball_marker', 10) # Publie un marqueur 3D dans RViz
+        self.pub_debug_img = self.create_publisher(Image, 'ball_debug', 10) # Publie l'image avec la bounding box
 
         # Subscribers
         self.sub_rgb = self.create_subscription(Image, 'rgb_camera/image', self.callback_rgb, 10)
         self.sub_depth = self.create_subscription(Image, 'depth_camera/image', self.callback_depth, 10)
-        
-        # NOUVEAU : On écoute les caractéristiques de la caméra
         self.sub_info = self.create_subscription(CameraInfo, 'rgb_camera/camera_info', self.callback_info, 10)
         
-        self.get_logger().info(" Prêt : Utilisation dynamique de CameraInfo.")
+        self.get_logger().info(" Prêt : Utilisation dynamique de la Camera.")
 
     def callback_info(self, msg):
-        # On ne stocke ça qu'une fois (ou à chaque update), c'est très léger
-        # La matrice K contient : [fx, 0, cx, 0, fy, cy, 0, 0, 1]
         if self.camera_intrinsics is None:
             self.get_logger().info(f" CameraInfo reçu : {msg.width}x{msg.height}")
         self.camera_intrinsics = msg
@@ -73,7 +69,7 @@ class BallDetectorHybrid(Node):
         # Flag pour savoir si une balle a été détectée
         ball_found = False
 
-        # --- IA Inference ---
+        # IA Inference 
         img_resized = cv2.resize(cv_rgb, (self.model_w, self.model_h))
         input_data = cv2.cvtColor(img_resized, cv2.COLOR_BGR2RGB)
         input_data = np.expand_dims(input_data, axis=0)
@@ -121,7 +117,7 @@ class BallDetectorHybrid(Node):
                     
                     if 0.1 < dist_z < 10.0 and not math.isnan(dist_z):
                         
-                        # --- UTILISATION DE CAMERA INFO ---
+                        # Utilisation de camera_info pour récupérer les focales
                         if self.camera_intrinsics is not None:
                             # K = [fx, 0, cx, 0, fy, cy, 0, 0, 1]
                             fx = self.camera_intrinsics.k[0]
@@ -130,7 +126,7 @@ class BallDetectorHybrid(Node):
                             cy_opt = self.camera_intrinsics.k[5] # Centre optique Y
                         
                         
-                        # Formule Optique : X = (pixel - centre) * Z / focale
+                        # Formule Optique : X = (pixel - centre) * Z / focale pour récupérer les coordonnées réelles
                         raw_x = (u_depth - cx_opt) * dist_z / fx 
                         raw_y = (v_depth - cy_opt) * dist_z / fy 
                         raw_z = dist_z                           
@@ -155,10 +151,10 @@ class BallDetectorHybrid(Node):
         pt.header.frame_id = "base_footprint" 
         pt.header.stamp = self.get_clock().now().to_msg()
         
-        # --- INVERSION DES AXES (Manuelle) ---
+        # Inversion des axes (pour matcher le repère de coordonnées de la visualisation dans rviz)
         pt.point.x = float(cam_z)       # Profondeur -> Devant
         pt.point.y = -float(cam_x)      # Droite -> Gauche
-        pt.point.z = float(cam_y)       # Bas -> Haut (Attention au signe ici)
+        pt.point.z = float(cam_y)       # Bas -> Haut
         
         self.pub_ball.publish(pt)
         
@@ -171,7 +167,6 @@ class BallDetectorHybrid(Node):
         self.pub_marker.publish(marker)
     
     def publish_no_ball(self):
-        """Publie des coordonnées aberrantes quand aucune balle n'est détectée"""
         pt = PointStamped()
         pt.header.frame_id = "base_footprint"
         pt.header.stamp = self.get_clock().now().to_msg()
