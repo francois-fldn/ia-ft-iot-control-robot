@@ -63,7 +63,7 @@ Le robot devrait commencer a bouger après 20 secondes, ce qui permet de mettre 
 
 Pour voir les informations importantes, allez sur `Add > By topic > /ball_debug > Image` pour afficher l'image avec la bounding box, puis `Add > By topic > /ball_marker > Marker` pour voir le marqueur de la balle dans le champ de vision du robot.
 
-
+> *Remarque* : Si le pc rame un peu la simu ne devrait pas fonctionner normalement, dû à des timings décalés
 
 ## Démonstration du projet
 
