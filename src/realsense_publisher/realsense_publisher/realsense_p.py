@@ -12,9 +12,9 @@ class PointCloudPublisher(Node):
         super().__init__('pointcloudpublisher')
         
         # Publishers
-        self.depth_image_publisher_ = self.create_publisher(Image, 'Realsense/Image/Depth', qos_profile_sensor_data)
-        self.color_image_publisher_ = self.create_publisher(Image, 'Realsense/Image/Color', qos_profile_sensor_data)
-        self.camera_info_publisher_ = self.create_publisher(CameraInfo, 'Realsense/CameraInfo', qos_profile_sensor_data)
+        self.depth_image_publisher_ = self.create_publisher(Image, 'depth_camera/image', 10)
+        self.color_image_publisher_ = self.create_publisher(Image, 'rgb_camera/image', 10)
+        self.camera_info_publisher_ = self.create_publisher(CameraInfo, 'rgb_camera/camera_info', 10)
         
         # Timer 6 FPS (1/6 ≈ 0.167)
         self.timer = self.create_timer(0.167, self.timer_callback)

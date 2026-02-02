@@ -10,6 +10,7 @@ import tflite_runtime.interpreter as tflite
 from ament_index_python.packages import get_package_share_directory
 import os
 import math
+from rclpy.qos import qos_profile_sensor_data
 
 class BallDetectorHybrid(Node):
     def __init__(self):
@@ -57,7 +58,9 @@ class BallDetectorHybrid(Node):
     def callback_depth(self, msg):
         try:
             self.latest_depth_img = self.bridge.imgmsg_to_cv2(msg, desired_encoding="passthrough")
-        except CvBridgeError: pass
+        except CvBridgeError: 
+            print("erreur sur l'image profondeur")
+            pass
 
     def callback_rgb(self, rgb_msg):
         try: cv_rgb = self.bridge.imgmsg_to_cv2(rgb_msg, "bgr8")
@@ -106,6 +109,8 @@ class BallDetectorHybrid(Node):
 
             x_tl = int(cx - w/2); y_tl = int(cy - h/2)
             cv2.rectangle(debug_image, (x_tl, y_tl), (x_tl+w, y_tl+h), (0, 255, 0), 2)
+            if self.latest_depth_img is None:
+                print("pb au niveau de la depth image")
 
             if self.latest_depth_img is not None:
                 d_h, d_w = self.latest_depth_img.shape[:2]
@@ -114,7 +119,7 @@ class BallDetectorHybrid(Node):
 
                 if 0 <= u_depth < d_w and 0 <= v_depth < d_h:
                     dist_z = self.latest_depth_img[v_depth, u_depth]
-                    
+                    # dist_z /= 1000.0 # conversion en mm
                     if 0.1 < dist_z < 10.0 and not math.isnan(dist_z):
                         
                         # Utilisation de camera_info pour récupérer les focales
@@ -124,6 +129,7 @@ class BallDetectorHybrid(Node):
                             cx_opt = self.camera_intrinsics.k[2] # Centre optique X
                             fy = self.camera_intrinsics.k[4]
                             cy_opt = self.camera_intrinsics.k[5] # Centre optique Y
+                        else: print("pb de camera info")
                         
                         
                         # Formule Optique : X = (pixel - centre) * Z / focale pour récupérer les coordonnées réelles
@@ -138,7 +144,10 @@ class BallDetectorHybrid(Node):
                         self.publish_result(raw_x, raw_y, raw_z)
                         ball_found = True
                         break 
-        
+                    else:
+                        print(f'dist_z: {dist_z}')
+                else:
+                    print("le probleme est autre cheh")
         # Si aucune balle n'a été détectée, publier des coordonnées aberrantes
         if not ball_found:
             self.publish_no_ball()

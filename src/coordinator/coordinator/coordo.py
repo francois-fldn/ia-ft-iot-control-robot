@@ -30,7 +30,9 @@ class Coordo(Node):
         self.start_timer = datetime.now()
 
         self.state = STATE_STOP
-        self.goal_achieved = False
+        self.prev_state = None
+
+        self.consecutive_lost = 0
 
         msg = UInt8()
         msg.data = self.state
@@ -47,17 +49,24 @@ class Coordo(Node):
     def ball_scan_callback(self, msg):
         prev_state = self.state
 
-        if (self.goal_achieved or self.state == STATE_GO): 
-            return
-
         if (msg.point.x == 1000):
+            self.consecutive_lost+=1 
+            if (self.consecutive_lost > 2) and (self.state == STATE_LOCK_IN): 
+                self.logger.info("balle perdue... retour en recherche de balle")
+                # self.state = STATE_ROTATE
+                self.change_state(STATE_ROTATE)
+                self.start_timer = datetime.now()
             return
 
         if (msg.point.x != 1000): 
-            # print(f"coordonnees recues : {msg.point.x}, {msg.point.y}, {msg.point.z}")
-            self.state = STATE_LOCK_IN
+            self.consecutive_lost=0
+            self.change_state(STATE_LOCK_IN)
+            # self.prev_state = self.state
+            # self.state = STATE_LOCK_IN
             if (msg.point.x <= 0.28):
-                self.state = STATE_GO
+                # self.prev_state = self.state
+                # self.state = STATE_GO
+                self.change_state(STATE_GO)
                 self.start_timer = datetime.now()
 
         if prev_state != self.state : self.logger.info(f'Changement d\'état {state_to_str(self.state)}')
@@ -72,18 +81,20 @@ class Coordo(Node):
             envoyer le
         '''
 
+    def change_state(self, new_state):
+        self.prev_state = self.state
+        self.state = new_state
+
     def send_state(self):
         msg = UInt8()
 
         if (self.state == STATE_STOP):
-            if (self.goal_achieved): return 
             now = datetime.now()
             delta = now - self.start_timer
 
-            if delta.seconds >= 20: # une petite attente le temps que la simu se lance
-                self.state = STATE_ROTATE
-                msg.data = self.state
-                self.state_publisher.publish(msg)
+            if delta.seconds >= 5: # une petite attente le temps que la simu se lance
+                # self.state = STATE_ROTATE
+                self.change_state(STATE_ROTATE)
                 self.logger.info(f'Changement d\'état {state_to_str(self.state)}')
                 self.start_timer = datetime.now()
 
@@ -93,9 +104,8 @@ class Coordo(Node):
             delta = now - self.start_timer
             
             if delta.seconds >= 20:
-                self.state = STATE_WANDERER
-                msg.data = self.state
-                self.state_publisher.publish(msg)
+                self.change_state(STATE_WANDERER)
+                # self.state = STATE_WANDERER
                 self.logger.info(f'Changement d\'état {state_to_str(self.state)}')
                 self.start_timer = datetime.now()
 
@@ -105,9 +115,8 @@ class Coordo(Node):
             delta = now - self.start_timer
 
             if delta.seconds >= 60:
-                self.state = STATE_ROTATE
-                msg.data = self.state
-                self.state_publisher.publish(msg)
+                self.change_state(STATE_ROTATE)
+                # self.state = STATE_ROTATE
                 self.logger.info(f'Changement d\'état {state_to_str(self.state)}')
                 self.start_timer = datetime.now()
 
@@ -119,11 +128,12 @@ class Coordo(Node):
             delta = now - self.start_timer
 
             if delta.seconds >= 4:
-                self.state = STATE_STOP
-                msg.data = self.state
-                self.state_publisher.publish(msg)
+                # self.state = STATE_STOP
+                self.change_state(STATE_STOP)
                 self.logger.info(f'Changement d\'état {state_to_str(self.state)}')
-                self.goal_achieved = True
+        
+        msg.data = self.state
+        self.state_publisher.publish(msg)
 
         # msg = String()
         # msg.data = f'Hello, world! {self.i}'
