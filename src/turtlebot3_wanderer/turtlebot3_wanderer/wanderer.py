@@ -79,7 +79,7 @@ class SearchBallBehavior(Node):
         # avoir la distance minimale en retirant les erreurs
         min_dist = min([r for r in front_ranges if r > 0.1])
 
-        self.obstacle_ahead = min_dist < 0.4
+        self.obstacle_ahead = min_dist <= 0.3
     
     def control_loop(self):
         msg = Twist()
@@ -89,7 +89,9 @@ class SearchBallBehavior(Node):
         if (self.obstacle_ahead):
             self.log_state = 2
             msg.linear.x = 0.0
-            msg.angular.z = -0.5
+            msg.angular.z = 0.5
+            if (self.state == STATE_LOCK_IN):
+                msg.angular.z = 0.0
 
         elif (self.state == STATE_STOP):
             self.log_state = 0
